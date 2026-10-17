@@ -20,31 +20,29 @@ namespace TeXShift.Core.OneNote
     /// </summary>
     public class OneNotePageReader : IContentReader
     {
-        private readonly OneNoteInterop.Application _oneNoteApp;
+        private readonly OneNoteComDispatcher _comDispatcher;
         private static readonly Regex BrTagWithFollowingNewlineRegex = new Regex(
             "<br\\b[^>]*>(?:\\r\\n|\\r|\\n)?",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public OneNotePageReader(OneNoteInterop.Application oneNoteApp)
+        internal OneNotePageReader(OneNoteComDispatcher comDispatcher)
         {
-            _oneNoteApp = oneNoteApp;
+            _comDispatcher = comDispatcher ?? throw new ArgumentNullException(nameof(comDispatcher));
         }
 
         /// <summary>
         /// Asynchronously extracts text content based on the user's current selection or cursor position.
         /// </summary>
-        public async Task<ReadResult> ExtractContentAsync()
+        public Task<ReadResult> ExtractContentAsync()
         {
-            // Wrap COM calls in Task.Run to avoid blocking UI thread
-            // OneNote COM objects must be accessed on STA thread
-            return await Task.Run(() => ExtractContent()).ConfigureAwait(false);
+            return _comDispatcher.InvokeAsync(ExtractContent);
         }
 
         /// <summary>
         /// Extracts text content based on the user's current selection or cursor position.
         /// (Synchronous version - kept for internal use)
         /// </summary>
-        private ReadResult ExtractContent()
+        private ReadResult ExtractContent(OneNoteInterop.Application oneNoteApp)
         {
             OneNoteInterop.Windows windows = null;
             OneNoteInterop.Window window = null;
@@ -53,7 +51,7 @@ namespace TeXShift.Core.OneNote
                 string pageId;
                 using (PerformanceTraceContext.Measure("Read.OneNote.GetCurrentPageId"))
                 {
-                    windows = _oneNoteApp.Windows;
+                    windows = oneNoteApp.Windows;
                     window = windows.CurrentWindow;
                     pageId = window?.CurrentPageId;
                 }
@@ -67,7 +65,7 @@ namespace TeXShift.Core.OneNote
                 using (PerformanceTraceContext.Measure("Read.OneNote.GetPageContent", "piSelection"))
                 {
                     // piSelection includes selection markers but excludes binary payloads (e.g., InkDrawing/Data base64).
-                    _oneNoteApp.GetPageContent(pageId, out xmlContent, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
+                    oneNoteApp.GetPageContent(pageId, out xmlContent, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
                 }
 
                 if (PerformanceTraceContext.GetCurrent() != null)

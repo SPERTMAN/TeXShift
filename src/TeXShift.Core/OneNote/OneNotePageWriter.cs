@@ -18,12 +18,12 @@ namespace TeXShift.Core.OneNote
     /// </summary>
     public class OneNotePageWriter : IContentWriter
     {
-        private readonly OneNoteInterop.Application _oneNoteApp;
+        private readonly OneNoteComDispatcher _comDispatcher;
         private readonly XNamespace _ns = OneNoteXml.Namespace;
 
-        public OneNotePageWriter(OneNoteInterop.Application oneNoteApp)
+        internal OneNotePageWriter(OneNoteComDispatcher comDispatcher)
         {
-            _oneNoteApp = oneNoteApp;
+            _comDispatcher = comDispatcher ?? throw new ArgumentNullException(nameof(comDispatcher));
         }
 
         /// <summary>
@@ -31,10 +31,9 @@ namespace TeXShift.Core.OneNote
         /// </summary>
         /// <param name="readResult">The original read result containing metadata</param>
         /// <param name="newOutlineXml">The new Outline XML element to insert</param>
-        public async Task ReplaceContentAsync(ReadResult readResult, XElement newOutlineXml)
+        public Task ReplaceContentAsync(ReadResult readResult, XElement newOutlineXml)
         {
-            // Wrap COM calls in Task.Run to avoid blocking UI thread
-            await Task.Run(() => ReplaceContent(readResult, newOutlineXml)).ConfigureAwait(false);
+            return _comDispatcher.InvokeAsync(app => ReplaceContent(app, readResult, newOutlineXml));
         }
 
         /// <summary>
@@ -43,7 +42,7 @@ namespace TeXShift.Core.OneNote
         /// </summary>
         /// <param name="readResult">The original read result containing metadata</param>
         /// <param name="newOutlineXml">The new Outline XML element to insert</param>
-        private void ReplaceContent(ReadResult readResult, XElement newOutlineXml)
+        private void ReplaceContent(OneNoteInterop.Application app, ReadResult readResult, XElement newOutlineXml)
         {
             if (readResult == null)
                 throw new ArgumentNullException(nameof(readResult));
@@ -54,15 +53,15 @@ namespace TeXShift.Core.OneNote
             if (!readResult.TargetObjectIds.Any())
                 throw new ArgumentException("TargetObjectIds is required", nameof(readResult));
 
-            WriteOutlines(readResult, new[] { BuildUpdatedOutline(readResult, newOutlineXml) });
+            WriteOutlines(app, readResult, new[] { BuildUpdatedOutline(readResult, newOutlineXml) });
         }
 
         public Task WriteOutlinesAsync(ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
         {
-            return Task.Run(() => WriteOutlines(readResult, outlines));
+            return _comDispatcher.InvokeAsync(app => WriteOutlines(app, readResult, outlines));
         }
 
-        private void WriteOutlines(ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
+        private void WriteOutlines(OneNoteInterop.Application app, ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
         {
             if (readResult == null || string.IsNullOrEmpty(readResult.PageId))
                 throw new ArgumentException("A page ID is required.", nameof(readResult));
@@ -111,7 +110,7 @@ namespace TeXShift.Core.OneNote
             {
                 using (PerformanceTraceContext.Measure("Write.OneNote.UpdatePageContent", "xs2013/force=true"))
                 {
-                    _oneNoteApp.UpdatePageContent(updatedXml, DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);
+                    app.UpdatePageContent(updatedXml, DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);
                 }
             }
             catch (System.Runtime.InteropServices.COMException comEx)

@@ -10,14 +10,11 @@ namespace TeXShift.Core.OneNote
     /// </summary>
     public class OneNotePublisher
     {
-        private readonly OneNoteInterop.Application _oneNoteApp;
+        private readonly OneNoteComDispatcher _comDispatcher;
 
-        public OneNotePublisher(OneNoteInterop.Application oneNoteApp)
+        internal OneNotePublisher(OneNoteComDispatcher comDispatcher)
         {
-            if (oneNoteApp == null)
-                throw new ArgumentNullException(nameof(oneNoteApp));
-
-            _oneNoteApp = oneNoteApp;
+            _comDispatcher = comDispatcher ?? throw new ArgumentNullException(nameof(comDispatcher));
         }
 
         /// <summary>
@@ -33,7 +30,7 @@ namespace TeXShift.Core.OneNote
             if (string.IsNullOrWhiteSpace(outputPath))
                 throw new ArgumentException("Output path is required.", nameof(outputPath));
 
-            return await Task.Run(() =>
+            return await _comDispatcher.InvokeAsync(oneNoteApp =>
             {
                 string directory = Path.GetDirectoryName(outputPath);
                 if (string.IsNullOrWhiteSpace(directory))
@@ -51,7 +48,7 @@ namespace TeXShift.Core.OneNote
                     File.Delete(outputPath);
                 }
 
-                _oneNoteApp.Publish(pageId, outputPath, OneNoteInterop.PublishFormat.pfPDF, string.Empty);
+                oneNoteApp.Publish(pageId, outputPath, OneNoteInterop.PublishFormat.pfPDF, string.Empty);
                 return File.Exists(outputPath);
             }).ConfigureAwait(false);
         }

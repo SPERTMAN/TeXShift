@@ -24,6 +24,8 @@ namespace TeXShift.Core.Services
         private readonly Lazy<MarkdownPipeline> _markdownPipeline;
         private readonly Lazy<IMathService> _mathService;
         private readonly Lazy<IMermaidService> _mermaidService;
+        private readonly object _oneNoteDispatcherLock = new object();
+        private OneNoteComDispatcher _oneNoteDispatcher;
         private bool _disposed;
 
         /// <summary>
@@ -113,7 +115,7 @@ namespace TeXShift.Core.Services
             if (oneNoteApp == null)
                 throw new ArgumentNullException(nameof(oneNoteApp));
 
-            return new OneNotePageReader(oneNoteApp);
+            return new OneNotePageReader(GetOneNoteDispatcher(oneNoteApp));
         }
 
         /// <summary>
@@ -144,7 +146,7 @@ namespace TeXShift.Core.Services
             if (oneNoteApp == null)
                 throw new ArgumentNullException(nameof(oneNoteApp));
 
-            return new OneNotePageWriter(oneNoteApp);
+            return new OneNotePageWriter(GetOneNoteDispatcher(oneNoteApp));
         }
 
         /// <summary>
@@ -156,7 +158,7 @@ namespace TeXShift.Core.Services
             if (oneNoteApp == null)
                 throw new ArgumentNullException(nameof(oneNoteApp));
 
-            return new OneNotePublisher(oneNoteApp);
+            return new OneNotePublisher(GetOneNoteDispatcher(oneNoteApp));
         }
 
         /// <summary>
@@ -210,6 +212,18 @@ namespace TeXShift.Core.Services
             {
                 if (_mermaidService.IsValueCreated && _mermaidService.Value is IDisposable mermaidDisposable)
                     mermaidDisposable.Dispose();
+                if (_oneNoteDispatcher != null)
+                    _oneNoteDispatcher.Dispose();
+            }
+        }
+
+        private OneNoteComDispatcher GetOneNoteDispatcher(OneNoteApp.Application oneNoteApp)
+        {
+            lock (_oneNoteDispatcherLock)
+            {
+                if (_oneNoteDispatcher == null)
+                    _oneNoteDispatcher = new OneNoteComDispatcher(oneNoteApp);
+                return _oneNoteDispatcher;
             }
         }
     }
