@@ -27,6 +27,7 @@ namespace TeXShift.Core.Math
         private readonly SemaphoreSlim _initLock = new SemaphoreSlim(1, 1);
 
         private StaWorker _worker;
+        private string _userDataFolder;
 
         // Regex to add mml: namespace prefix to MathML elements
         private static readonly Regex MathMLElementRegex = new Regex(
@@ -71,8 +72,7 @@ namespace TeXShift.Core.Math
                 }
                 catch (Exception ex)
                 {
-                    // Cache the failure so subsequent calls fail fast without retrying
-                    // expensive STA thread + WebView2 initialization.
+                    StopWorker();
                     if (ex is TeXShiftException)
                     {
                         _initFailure = ex;
@@ -97,8 +97,7 @@ namespace TeXShift.Core.Math
             _webView = new WebView2();
             _webView.Visible = false;
 
-            var userDataFolder = Path.Combine(Path.GetTempPath(), "TeXShift_WebView2");
-            Directory.CreateDirectory(userDataFolder);
+            var userDataFolder = CreateUserDataFolder();
 
             CoreWebView2Environment env;
             try
@@ -329,15 +328,54 @@ namespace TeXShift.Core.Math
 
         public void Dispose()
         {
-            StaWorker worker;
             lock (_lifecycle)
             {
                 _isDisposed = true;
                 _isInitialized = false;
-                worker = _worker;
             }
-            worker?.Dispose();
+            StopWorker();
             // The semaphore can still have initialization waiters; let GC reclaim it.
+        }
+
+        private void StopWorker()
+        {
+            StaWorker worker;
+            lock (_lifecycle)
+            {
+                worker = _worker;
+                _worker = null;
+            }
+
+            worker?.Dispose();
+            DeleteUserDataFolder();
+        }
+
+        private string CreateUserDataFolder()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "TeXShift_WebView2");
+            var folder = Path.Combine(root, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(folder);
+            _userDataFolder = folder;
+            return folder;
+        }
+
+        private void DeleteUserDataFolder()
+        {
+            var folder = Interlocked.Exchange(ref _userDataFolder, null);
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
+
+            try
+            {
+                Directory.Delete(folder, true);
+            }
+            catch (IOException)
+            {
+                // WebView2 may release profile files shortly after its process exits.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // A locked profile can be removed by the operating system later.
+            }
         }
 
         private void DisposeWebView()
