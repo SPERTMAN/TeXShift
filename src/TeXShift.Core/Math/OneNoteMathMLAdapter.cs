@@ -70,6 +70,7 @@ namespace TeXShift.Core.Math
 
             // Group adjacent large operators before OneNote imports their operands.
             mathml = OneNoteLargeOperatorNormalizer.Normalize(mathml);
+            mathml = OneNoteOperatorSizingNormalizer.Normalize(mathml);
 
             // Step 9: Convert MathML attributes to single-quoted values to avoid OneNote inserting
             // visible stray quote characters around equations.

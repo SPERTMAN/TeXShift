@@ -10,6 +10,14 @@ A3 混合上下限：$\sum \sum_{i=1}$
 
 ## 操作数与分组
 
+A4 混合有界与无界求和：$\mathcal{L}_{track}=\sum_{j=1}^{M}\sum\sum\sum_{i=1}^{N}\vert{}\vert{}y_{j,i}-\hat{y}_{j,i}\vert{}\vert{}$
+
+A5 显示公式的连续求和：
+
+$$
+\sum_{j=1}^{M}\sum\sum\sum_{i=1}^{N}x_{j,i}
+$$
+
 B1 带操作数：$\sum_{j=1}^{M}\sum_{i=1}^{N}x_{j,i}$
 
 B2 显式分组：$\sum_{j=1}^{M}{\sum_{i=1}^{N}{x_{j,i}}}$

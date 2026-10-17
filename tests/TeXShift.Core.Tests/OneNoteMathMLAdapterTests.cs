@@ -12,6 +12,24 @@ namespace TeXShift.Core.Tests
         private const string TrailingSentinel = "<span lang='x-none'>\u200B</span>";
 
         [TestMethod]
+        public void NestedSumsAndProductsDoNotGrowWithTheirOperands()
+        {
+            string result = AdaptToOneNote("<math><mo>∑</mo><mo>∑</mo><mo>∏</mo><mi>x</mi></math>");
+            int end = result.IndexOf("<![endif]-->");
+            var math = XElement.Parse(result.Substring(ConditionalCommentStart.Length, end - ConditionalCommentStart.Length));
+            foreach (var op in math.Descendants("mo"))
+                Assert.AreEqual("false", (string)op.Attribute("stretchy"));
+        }
+
+        [TestMethod]
+        public void IntegralImportAndExplicitStretchingRemainSupported()
+        {
+            string result = AdaptToOneNote("<math><mo stretchy=\"false\">∫</mo><mi>x</mi><mo stretchy=\"true\">∑</mo><mi>y</mi></math>");
+            StringAssert.Contains(result, "<mo>∫</mo>");
+            StringAssert.Contains(result, "<mo stretchy='true'>∑</mo>");
+        }
+
+        [TestMethod]
         [DataRow("<math><mn>2</mn></math>")]
         [DataRow("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>")]
         public void AdaptToOneNoteWrapsNonEmptyMathMlWithoutLeadingSentinel(string mathMl)
@@ -138,7 +156,7 @@ namespace TeXShift.Core.Tests
         public void AdaptationGroupsNamespacedNumericOperatorsInsideFractionWithoutChangingSlots()
         {
             const string input = "<mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML'><mml:mfrac><mml:mrow><mml:mo>&#x2211;</mml:mo><mml:mo>&#x2211;</mml:mo><mml:mi>x</mml:mi></mml:mrow><mml:mi>y</mml:mi></mml:mfrac></mml:math>";
-            const string expected = "<mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML'><mml:mfrac><mml:mrow><mml:mo>∑</mml:mo><mml:mrow><mml:mo>∑</mml:mo><mml:mi>x</mml:mi></mml:mrow></mml:mrow><mml:mi>y</mml:mi></mml:mfrac></mml:math>";
+            const string expected = "<mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML'><mml:mfrac><mml:mrow><mml:mo stretchy='false'>∑</mml:mo><mml:mrow><mml:mo stretchy='false'>∑</mml:mo><mml:mi>x</mml:mi></mml:mrow></mml:mrow><mml:mi>y</mml:mi></mml:mfrac></mml:math>";
             string adapted = AdaptToOneNote(input);
             int end = adapted.IndexOf("<![endif]-->");
             AssertMathEqual(expected, adapted.Substring(ConditionalCommentStart.Length, end - ConditionalCommentStart.Length));
