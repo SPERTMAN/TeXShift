@@ -57,7 +57,7 @@ English | [简体中文](README.zh-CN.md)
   - Heading font sizes (H1-H6)
   - Code block styling (colors, font, size, line spacing)
   - Inline code styling
-  - Mermaid theme and max resolution
+  - Mermaid theme (with live preview) and max resolution
   - Horizontal rule style (image/character)
 
 - **Reverse Conversion** - Convert OneNote rich text back to Markdown

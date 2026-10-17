@@ -241,6 +241,12 @@
   <data name="Settings_Label_MaxHeight" xml:space="preserve">
     <value>Resolution limit (H)</value>
   </data>
+  <data name="Settings_MermaidPreview_Name" xml:space="preserve">
+    <value>Theme preview</value>
+  </data>
+  <data name="Settings_MermaidPreview_Failed" xml:space="preserve">
+    <value>Preview unavailable</value>
+  </data>
   <data name="Settings_Section_HorizontalRule" xml:space="preserve">
     <value>Horizontal Rule</value>
   </data>

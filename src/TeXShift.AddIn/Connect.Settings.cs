@@ -50,6 +50,7 @@ namespace TeXShift.AddIn
         private void ShowWpfSettingsDialog()
         {
             var parentHwnd = NativeMethods.GetForegroundWindow();
+            var mermaidService = _serviceContainer.MermaidService;
             Core.Configuration.AppSettings updatedSettings = null;
             bool dialogResult = false;
             bool resetToDefaultsRequested = false;
@@ -60,7 +61,7 @@ namespace TeXShift.AddIn
             {
                 try
                 {
-                    var dialog = new SettingsWindow(_appSettings);
+                    var dialog = new SettingsWindow(_appSettings, mermaidService);
 
                     // Set WPF window's Owner to OneNote window
                     var helper = new WindowInteropHelper(dialog);

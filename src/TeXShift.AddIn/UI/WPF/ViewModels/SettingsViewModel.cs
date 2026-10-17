@@ -7,13 +7,14 @@ using TeXShift.AddIn.Localization;
 using TeXShift.AddIn.UI.WPF.Converters;
 using TeXShift.Core.Configuration;
 using TeXShift.Core.Localization;
+using TeXShift.Core.Mermaid;
 
 namespace TeXShift.AddIn.UI.WPF.ViewModels
 {
     /// <summary>
     /// ViewModel for the Settings Window.
     /// </summary>
-    public class SettingsViewModel : ViewModelBase
+    public class SettingsViewModel : ViewModelBase, IDisposable
     {
         #region Debug Settings
 
@@ -185,7 +186,13 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
         public string MermaidTheme
         {
             get => _mermaidTheme;
-            set => SetProperty(ref _mermaidTheme, value);
+            set
+            {
+                if (SetProperty(ref _mermaidTheme, value))
+                {
+                    MermaidPreview.SetTheme(value);
+                }
+            }
         }
 
         private int _mermaidMaxWidth;
@@ -204,6 +211,8 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
 
         public ObservableCollection<string> AvailableMermaidThemes { get; } =
             new ObservableCollection<string> { "default", "dark", "forest", "neutral" };
+
+        public MermaidThemePreviewViewModel MermaidPreview { get; }
 
         #endregion
 
@@ -363,10 +372,16 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
 
         #endregion
 
-        public SettingsViewModel()
+        public SettingsViewModel(IMermaidService mermaidService)
         {
+            MermaidPreview = new MermaidThemePreviewViewModel(mermaidService);
             ResetCommand = new RelayCommand(ResetToDefaults);
             LoadFromSettings(AppSettings.CreateDefault());
+        }
+
+        public void Dispose()
+        {
+            MermaidPreview.Dispose();
         }
 
         /// <summary>

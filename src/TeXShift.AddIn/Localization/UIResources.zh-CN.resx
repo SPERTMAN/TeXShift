@@ -265,6 +265,12 @@
   <data name="Settings_Label_MaxHeight" xml:space="preserve">
     <value>分辨率上限(高)</value>
   </data>
+  <data name="Settings_MermaidPreview_Name" xml:space="preserve">
+    <value>主题预览</value>
+  </data>
+  <data name="Settings_MermaidPreview_Failed" xml:space="preserve">
+    <value>无法生成预览</value>
+  </data>
   <data name="Settings_Section_HorizontalRule" xml:space="preserve">
     <value>分隔线</value>
   </data>

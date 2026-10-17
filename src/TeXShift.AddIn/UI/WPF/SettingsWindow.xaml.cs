@@ -8,6 +8,7 @@ using TeXShift.AddIn.Localization;
 using TeXShift.AddIn.UI.WPF.Converters;
 using TeXShift.AddIn.UI.WPF.ViewModels;
 using TeXShift.Core.Configuration;
+using TeXShift.Core.Mermaid;
 
 namespace TeXShift.AddIn.UI.WPF
 {
@@ -38,9 +39,10 @@ namespace TeXShift.AddIn.UI.WPF
         public SettingsViewModel ViewModel { get; }
         public bool ResetToDefaultsRequested { get; private set; }
 
-        public SettingsWindow()
+        public SettingsWindow(AppSettings settings, IMermaidService mermaidService)
         {
-            ViewModel = new SettingsViewModel();
+            ViewModel = new SettingsViewModel(mermaidService);
+            ViewModel.LoadFromSettings(settings);
             DataContext = ViewModel;
             InitializeComponent();
 
@@ -56,11 +58,6 @@ namespace TeXShift.AddIn.UI.WPF
                     NativeMethods.SetForegroundWindow(_ownerHandle);
                 }
             };
-        }
-
-        public SettingsWindow(AppSettings settings) : this()
-        {
-            ViewModel.LoadFromSettings(settings);
         }
 
         public AppSettings GetUpdatedSettings()
@@ -83,7 +80,17 @@ namespace TeXShift.AddIn.UI.WPF
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);
+            ViewModel.Dispose();
             DataContext = null;
+        }
+
+        private void MermaidPreview_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            // Loaded also fires for unselected tabs; visibility marks the Mermaid tab as shown.
+            if ((bool)e.NewValue)
+            {
+                ViewModel.MermaidPreview.Activate();
+            }
         }
 
         private void ResetButton_Click(object sender, RoutedEventArgs e)

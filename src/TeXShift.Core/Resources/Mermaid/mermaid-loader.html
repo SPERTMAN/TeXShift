@@ -258,6 +258,18 @@
         }
     }
 
+    // Each render re-initializes Mermaid's global config with its own theme, so run renders
+    // one at a time; otherwise an overlapping request could switch the theme mid-render.
+    var renderQueue = Promise.resolve();
+
+    function enqueueRender(code, options) {
+        var run = renderQueue.then(function () {
+            return renderMermaid(code, options);
+        });
+        renderQueue = run.catch(function () { });
+        return run;
+    }
+
     // Handle render requests from C#
     (function () {
         if (!window.chrome || !window.chrome.webview) return;
@@ -267,7 +279,7 @@
             if (!msg || msg.type !== 'renderMermaid' || !msg.id) return;
 
             (async function () {
-                var result = await renderMermaid(msg.code, msg.options);
+                var result = await enqueueRender(msg.code, msg.options);
                 window.chrome.webview.postMessage({
                     type: 'renderMermaidResult',
                     id: msg.id,
