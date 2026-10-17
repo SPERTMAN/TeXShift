@@ -9,6 +9,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using TeXShift.Core.Errors;
 using TeXShift.Core.Localization;
+using TeXShift.Core.Utils;
 
 namespace TeXShift.Core.Math
 {
@@ -20,14 +21,12 @@ namespace TeXShift.Core.Math
     {
         private WebView2 _webView;
         private bool _isInitialized;
-        private bool _isDisposed;
+        private volatile bool _isDisposed;
+        private readonly object _lifecycle = new object();
         private Exception _initFailure;
         private readonly SemaphoreSlim _initLock = new SemaphoreSlim(1, 1);
 
-        // STA thread for WebView2 operations
-        private Thread _staThread;
-        private TaskCompletionSource<bool> _staReady;
-        private SynchronizationContext _staSyncContext;
+        private StaWorker _worker;
 
         // Regex to add mml: namespace prefix to MathML elements
         private static readonly Regex MathMLElementRegex = new Regex(
@@ -41,6 +40,7 @@ namespace TeXShift.Core.Math
 
         public async Task InitializeAsync()
         {
+            if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
             if (_isInitialized) return;
             if (_initFailure != null) throw _initFailure;
 
@@ -52,34 +52,22 @@ namespace TeXShift.Core.Math
 
                 try
                 {
-                    // Start dedicated STA thread for WebView2
-                    _staReady = new TaskCompletionSource<bool>();
-                    _staThread = new Thread(StaThreadStart);
-                    _staThread.SetApartmentState(ApartmentState.STA);
-                    _staThread.IsBackground = true;
-                    _staThread.Name = "TeXShift_WebView2_STA";
-                    _staThread.Start();
-
-                    // Wait for STA thread to be ready
-                    await _staReady.Task.ConfigureAwait(false);
-
-                    // Initialize WebView2 on STA thread
-                    var initTcs = new TaskCompletionSource<bool>();
-                    _staSyncContext.Post(async _ =>
+                    StaWorker worker;
+                    lock (_lifecycle)
                     {
-                        try
-                        {
-                            await InitializeWebView2Async().ConfigureAwait(false);
-                            initTcs.SetResult(true);
-                        }
-                        catch (Exception ex)
-                        {
-                            initTcs.SetException(ex);
-                        }
-                    }, null);
-
-                    await initTcs.Task.ConfigureAwait(false);
-                    _isInitialized = true;
+                        if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
+                        worker = _worker = new StaWorker("TeXShift_Math_WebView2_STA", DisposeWebView);
+                    }
+                    await worker.InvokeAsync(async () =>
+                    {
+                        await InitializeWebView2Async();
+                        return true;
+                    }).ConfigureAwait(false);
+                    lock (_lifecycle)
+                    {
+                        if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
+                        _isInitialized = true;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -102,19 +90,6 @@ namespace TeXShift.Core.Math
             {
                 _initLock.Release();
             }
-        }
-
-        private void StaThreadStart()
-        {
-            // Create and install a synchronization context for this STA thread
-            var form = new Form { Visible = false };
-            _staSyncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
-            SynchronizationContext.SetSynchronizationContext(_staSyncContext);
-
-            _staReady.SetResult(true);
-
-            // Run message loop to keep thread alive and process messages
-            Application.Run();
         }
 
         private async Task InitializeWebView2Async()
@@ -192,21 +167,8 @@ namespace TeXShift.Core.Math
             try
             {
                 // Execute on STA thread
-                var tcs = new TaskCompletionSource<string>();
-                _staSyncContext.Post(async _ =>
-                {
-                    try
-                    {
-                        var result = await ConvertLatexAsync(latex, displayMode).ConfigureAwait(false);
-                        tcs.SetResult(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        tcs.SetException(ex);
-                    }
-                }, null);
-
-                return await tcs.Task.ConfigureAwait(false);
+                if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
+                return await _worker.InvokeAsync(() => ConvertLatexAsync(latex, displayMode)).ConfigureAwait(false);
             }
             catch (Exception ex) when (!(ex is TeXShiftException))
             {
@@ -367,20 +329,22 @@ namespace TeXShift.Core.Math
 
         public void Dispose()
         {
-            if (_isDisposed) return;
-            _isDisposed = true;
-
-            // Stop the STA thread message loop
-            if (_staSyncContext != null)
+            StaWorker worker;
+            lock (_lifecycle)
             {
-                _staSyncContext.Post(_ =>
-                {
-                    _webView?.Dispose();
-                    Application.ExitThread();
-                }, null);
+                _isDisposed = true;
+                _isInitialized = false;
+                worker = _worker;
             }
-
-            _initLock?.Dispose();
+            worker?.Dispose();
+            // The semaphore can still have initialization waiters; let GC reclaim it.
         }
+
+        private void DisposeWebView()
+        {
+            _webView?.Dispose();
+            _webView = null;
+        }
+
     }
 }

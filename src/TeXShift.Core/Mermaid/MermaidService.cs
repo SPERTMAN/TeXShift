@@ -13,6 +13,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using TeXShift.Core.Errors;
 using TeXShift.Core.Localization;
+using TeXShift.Core.Utils;
 using TeXShift.Core.Logging;
 
 namespace TeXShift.Core.Mermaid
@@ -25,14 +26,12 @@ namespace TeXShift.Core.Mermaid
     {
         private WebView2 _webView;
         private bool _isInitialized;
-        private bool _isDisposed;
+        private volatile bool _isDisposed;
+        private readonly object _lifecycle = new object();
         private Exception _initFailure;
         private readonly SemaphoreSlim _initLock = new SemaphoreSlim(1, 1);
 
-        // STA thread for WebView2 operations
-        private Thread _staThread;
-        private TaskCompletionSource<bool> _staReady;
-        private SynchronizationContext _staSyncContext;
+        private StaWorker _worker;
 
         private readonly object _pendingLock = new object();
         private readonly Dictionary<string, TaskCompletionSource<MermaidRenderResult>> _pendingRequests =
@@ -42,6 +41,7 @@ namespace TeXShift.Core.Mermaid
 
         public async Task InitializeAsync()
         {
+            if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
             if (_isInitialized) return;
             if (_initFailure != null) throw _initFailure;
 
@@ -53,31 +53,22 @@ namespace TeXShift.Core.Mermaid
 
                 try
                 {
-                    _staReady = new TaskCompletionSource<bool>();
-                    _staThread = new Thread(StaThreadStart);
-                    _staThread.SetApartmentState(ApartmentState.STA);
-                    _staThread.IsBackground = true;
-                    _staThread.Name = "TeXShift_Mermaid_WebView2_STA";
-                    _staThread.Start();
-
-                    await _staReady.Task.ConfigureAwait(false);
-
-                    var initTcs = new TaskCompletionSource<bool>();
-                    _staSyncContext.Post(async _ =>
+                    StaWorker worker;
+                    lock (_lifecycle)
                     {
-                        try
-                        {
-                            await InitializeWebView2Async().ConfigureAwait(false);
-                            initTcs.SetResult(true);
-                        }
-                        catch (Exception ex)
-                        {
-                            initTcs.SetException(ex);
-                        }
-                    }, null);
-
-                    await initTcs.Task.ConfigureAwait(false);
-                    _isInitialized = true;
+                        if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
+                        worker = _worker = new StaWorker("TeXShift_Mermaid_WebView2_STA", DisposeWebView);
+                    }
+                    await worker.InvokeAsync(async () =>
+                    {
+                        await InitializeWebView2Async();
+                        return true;
+                    }).ConfigureAwait(false);
+                    lock (_lifecycle)
+                    {
+                        if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
+                        _isInitialized = true;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -100,19 +91,6 @@ namespace TeXShift.Core.Mermaid
             {
                 _initLock.Release();
             }
-        }
-
-        private void StaThreadStart()
-        {
-            // Create and install a synchronization context for this STA thread
-            var form = new Form { Visible = false };
-            _staSyncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
-            SynchronizationContext.SetSynchronizationContext(_staSyncContext);
-
-            _staReady.SetResult(true);
-
-            // Run message loop to keep thread alive and process messages
-            Application.Run();
         }
 
         private async Task InitializeWebView2Async()
@@ -191,21 +169,8 @@ namespace TeXShift.Core.Mermaid
 
             try
             {
-                var tcs = new TaskCompletionSource<MermaidRenderResult>();
-                _staSyncContext.Post(async _ =>
-                {
-                    try
-                    {
-                        var result = await RenderToImageOnStaAsync(mermaidCode, options).ConfigureAwait(false);
-                        tcs.SetResult(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        tcs.SetException(ex);
-                    }
-                }, null);
-
-                return await tcs.Task.ConfigureAwait(false);
+                if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
+                return await _worker.InvokeAsync(() => RenderToImageOnStaAsync(mermaidCode, options)).ConfigureAwait(false);
             }
             catch (Exception ex) when (!(ex is TeXShiftException))
             {
@@ -455,29 +420,28 @@ namespace TeXShift.Core.Mermaid
 
         public void Dispose()
         {
-            if (_isDisposed) return;
-            _isDisposed = true;
-
-            if (_staSyncContext != null)
+            StaWorker worker;
+            lock (_lifecycle)
             {
-                _staSyncContext.Post(_ =>
-                {
-                    try
-                    {
-                        if (_webView?.CoreWebView2 != null)
-                        {
-                            _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
-                        }
-                        _webView?.Dispose();
-                    }
-                    finally
-                    {
-                        Application.ExitThread();
-                    }
-                }, null);
+                _isDisposed = true;
+                _isInitialized = false;
+                worker = _worker;
             }
+            worker?.Dispose();
+            // The semaphore can still have initialization waiters; let GC reclaim it.
+        }
 
-            _initLock?.Dispose();
+        private void DisposeWebView()
+        {
+            if (_webView?.CoreWebView2 != null)
+                _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+            lock (_pendingLock)
+            {
+                foreach (var request in _pendingRequests.Values) request.TrySetCanceled();
+                _pendingRequests.Clear();
+            }
+            _webView?.Dispose();
+            _webView = null;
         }
 
         [DataContract]

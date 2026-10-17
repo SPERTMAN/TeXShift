@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Management;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -23,15 +24,14 @@ namespace TeXShift.Tests.E2E
         private const string TestSectionName = "E2E";
         private const string OneNoteAppPathRegistryKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\onenote.exe";
         private const string DefaultOneNoteExecutablePath = @"C:\Program Files\Microsoft Office\root\Office16\ONENOTE.EXE";
-        private const int SwShowMinNoActive = 7;
         private const int SwRestore = 9;
         private const int OneNoteStartupWindowTimeoutMs = 10000;
         private const int OneNoteStartupWindowPollIntervalMs = 200;
-        private const int OneNoteMinimizeTimeoutMs = 3000;
-        private const int OneNoteMinimizeRetryIntervalMs = 300;
         private const int OneNoteComReadyTimeoutMs = 10000;
         private const int OneNoteComReadyPollIntervalMs = 250;
         private const int OneNoteCloseTimeoutMs = 8000;
+        private const uint WmSysCommand = 0x0112;
+        private const int ScClose = 0xF060;
         private const int OneNoteActivateTimeoutMs = 3000;
         private const int OneNoteActivateRetryIntervalMs = 200;
         private const uint WmKeyDown = 0x0100;
@@ -52,6 +52,9 @@ namespace TeXShift.Tests.E2E
 
         [DllImport("user32.dll")]
         private static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
 
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
@@ -110,28 +113,37 @@ namespace TeXShift.Tests.E2E
         private string _importedPageId; // Page reproduced from a section file
         private string _importedSectionId; // Section file copy holding that page
         private bool _launchedOneNoteProcess; // Track if we launched OneNote
+        private Process _ownedOneNoteProcess;
         private bool _shouldCloseOneNote; // Flag to close OneNote on dispose
 
         private TestPageManager()
         {
             _staRunner = new StaTaskRunner("TeXShift_E2E_OneNote_STA");
-
-            // OneNote does not expose its restore target without a real window. Navigating to
-            // and deleting E2E pages in that state can leave its saved page pointer dangling.
-            LaunchOneNoteWithWindowIfNeeded();
-
-            if (_launchedOneNoteProcess)
+            try
             {
-                // Wait before COM activation so it attaches to the WMI-launched window instead
-                // of racing ahead and starting a headless -Embedding instance.
-                WaitForOneNoteMainWindow();
+                // OneNote does not expose its restore target without a real window. Navigating to
+                // and deleting E2E pages in that state can leave its saved page pointer dangling.
+                LaunchOneNoteWithWindowIfNeeded();
+
+                if (_launchedOneNoteProcess)
+                {
+                    // Wait before COM activation so it attaches to the WMI-launched window instead
+                    // of racing ahead and starting a headless -Embedding instance.
+                    WaitForOneNoteMainWindow();
+                }
+
+                _oneNoteApp = _staRunner.Run(() =>
+                {
+                    var appType = Type.GetTypeFromProgID("OneNote.Application");
+                    return (OneNoteInterop.Application)Activator.CreateInstance(appType);
+                });
             }
-
-            _oneNoteApp = _staRunner.Run(() =>
+            catch
             {
-                var appType = Type.GetTypeFromProgID("OneNote.Application");
-                return (OneNoteInterop.Application)Activator.CreateInstance(appType);
-            });
+                _staRunner.Dispose();
+                _ownedOneNoteProcess?.Dispose();
+                throw;
+            }
         }
 
         public static Task<TestPageManager> CreateAsync()
@@ -235,49 +247,27 @@ namespace TeXShift.Tests.E2E
 
         public static void CloseAllOneNoteProcesses()
         {
-            Process[] processes = null;
-
+            var processes = Process.GetProcessesByName("ONENOTE");
             try
             {
-                processes = Process.GetProcessesByName("ONENOTE");
-                foreach (var process in processes)
-                {
-                    try
-                    {
-                        process.CloseMainWindow();
-                        if (!process.WaitForExit(OneNoteCloseTimeoutMs))
-                        {
-                            process.Kill();
-                        }
-                    }
-                    catch
-                    {
-                        // The process may exit while it is being closed
-                    }
-                    finally
-                    {
-                        process.Dispose();
-                    }
-                }
+                foreach (var process in processes) CloseOneNoteProcess(process);
+            }
+            finally { foreach (var process in processes) process.Dispose(); }
+        }
 
-                processes = null;
-            }
-            catch
+        private static void CloseOneNoteProcess(Process process)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteCloseTimeoutMs);
+            while (!process.HasExited && DateTime.UtcNow < deadline)
             {
-                // Process enumeration may fail while OneNote is shutting down
+                process.Refresh();
+                var window = process.MainWindowHandle;
+                if (window != IntPtr.Zero)
+                    PostMessage(window, WmSysCommand, new IntPtr(ScClose), IntPtr.Zero);
+                if (process.WaitForExit(250)) return;
             }
-            finally
-            {
-                if (processes != null)
-                {
-                    foreach (var process in processes)
-                    {
-                        process.Dispose();
-                    }
-                }
-            }
-
-            WaitForOneNoteProcessesToSettle();
+            if (!process.HasExited)
+                throw new TimeoutException($"OneNote process {process.Id} did not exit cleanly.");
         }
 
         public Task<string> CreateTestPageAsync(string testName, string markdownContent, PageSelection selection)
@@ -475,14 +465,22 @@ namespace TeXShift.Tests.E2E
                         {
                             object returnValue = outputParameters["ReturnValue"];
                             _launchedOneNoteProcess = returnValue != null && Convert.ToUInt32(returnValue) == 0;
+                            if (_launchedOneNoteProcess)
+                            {
+                                _ownedOneNoteProcess = Process.GetProcessById(Convert.ToInt32(outputParameters["ProcessId"]));
+                                // Retain a process handle so PID reuse cannot target another instance.
+                                _ = _ownedOneNoteProcess.Handle;
+                            }
                         }
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall back to COM activation if WMI cannot launch OneNote
+                throw new InvalidOperationException("Could not launch a OneNote window for the test.", ex);
             }
+            if (!_launchedOneNoteProcess)
+                throw new InvalidOperationException("WMI could not launch OneNote for the test.");
         }
 
         private static bool IsOneNoteProcessRunning()
@@ -508,26 +506,6 @@ namespace TeXShift.Tests.E2E
                         process.Dispose();
                     }
                 }
-            }
-        }
-
-        private static void WaitForOneNoteProcessesToSettle()
-        {
-            var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteStartupWindowTimeoutMs);
-            int consecutiveEmptyPolls = 0;
-
-            while (DateTime.UtcNow < deadline)
-            {
-                if (IsOneNoteProcessRunning())
-                {
-                    consecutiveEmptyPolls = 0;
-                }
-                else if (++consecutiveEmptyPolls >= 2)
-                {
-                    return;
-                }
-
-                Thread.Sleep(OneNoteStartupWindowPollIntervalMs);
             }
         }
 
@@ -559,14 +537,17 @@ namespace TeXShift.Tests.E2E
             while (DateTime.UtcNow < deadline)
             {
                 IntPtr mainWindowHandle = GetOneNoteMainWindowHandle();
+                var className = new StringBuilder(256);
                 if (mainWindowHandle != IntPtr.Zero)
+                    GetClassName(mainWindowHandle, className, className.Capacity);
+                if (className.ToString() == "Framework::CFrame")
                 {
-                    MinimizeOneNoteWindow(mainWindowHandle);
                     return;
                 }
 
                 Thread.Sleep(OneNoteStartupWindowPollIntervalMs);
             }
+            throw new TimeoutException("OneNote did not open a notebook window. Check for a startup or recovery dialog.");
         }
 
         private static IntPtr GetOneNoteMainWindowHandle()
@@ -658,43 +639,9 @@ namespace TeXShift.Tests.E2E
             }
         }
 
-        private static void MinimizeOneNoteWindow(IntPtr windowHandle)
-        {
-            var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteMinimizeTimeoutMs);
-
-            // OneNote can override minimize requests while its startup sequence is still showing the window.
-            while (DateTime.UtcNow < deadline)
-            {
-                ShowWindow(windowHandle, SwShowMinNoActive);
-                Thread.Sleep(OneNoteMinimizeRetryIntervalMs);
-
-                if (IsIconic(windowHandle))
-                {
-                    return;
-                }
-            }
-        }
-
         private void CloseOneNoteProcess()
         {
-            // Kill OneNote process since we started it
-            try
-            {
-                var processes = System.Diagnostics.Process.GetProcessesByName("ONENOTE");
-                foreach (var proc in processes)
-                {
-                    proc.CloseMainWindow();
-                    if (!proc.WaitForExit(3000))
-                    {
-                        proc.Kill();
-                    }
-                    proc.Dispose();
-                }
-            }
-            catch
-            {
-                // Ignore process close failures
-            }
+            if (_ownedOneNoteProcess != null) CloseOneNoteProcess(_ownedOneNoteProcess);
         }
 
         private void CleanupTestResources()
@@ -1279,10 +1226,11 @@ namespace TeXShift.Tests.E2E
             _staRunner.Dispose();
 
             // Close OneNote after COM is released
-            if (_shouldCloseOneNote)
+            try
             {
-                CloseOneNoteProcess();
+                if (_shouldCloseOneNote) CloseOneNoteProcess();
             }
+            finally { _ownedOneNoteProcess?.Dispose(); }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1355,10 +1303,13 @@ namespace TeXShift.Tests.E2E
 
             private void RunMessageLoop()
             {
-                _syncContext = new WindowsFormsSynchronizationContext();
-                SynchronizationContext.SetSynchronizationContext(_syncContext);
-                _ready.SetResult(true);
-                Application.Run();
+                using (var context = new WindowsFormsSynchronizationContext())
+                {
+                    _syncContext = context;
+                    SynchronizationContext.SetSynchronizationContext(context);
+                    _ready.SetResult(true);
+                    Application.Run();
+                }
             }
 
             public void Dispose()
@@ -1373,7 +1324,8 @@ namespace TeXShift.Tests.E2E
 
                 if (_staThread != null && _staThread.IsAlive)
                 {
-                    _staThread.Join(TimeSpan.FromSeconds(2));
+                    if (!_staThread.Join(TimeSpan.FromSeconds(5)))
+                        throw new TimeoutException("The OneNote COM thread did not exit.");
                 }
             }
         }

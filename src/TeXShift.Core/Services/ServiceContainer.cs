@@ -201,16 +201,15 @@ namespace TeXShift.Core.Services
             if (_disposed) return;
             _disposed = true;
 
-            // Dispose MathService if it was created
-            if (_mathService.IsValueCreated && _mathService.Value is IDisposable disposable)
+            try
             {
-                disposable.Dispose();
+                if (_mathService.IsValueCreated && _mathService.Value is IDisposable disposable)
+                    disposable.Dispose();
             }
-
-            // Dispose MermaidService if it was created
-            if (_mermaidService.IsValueCreated && _mermaidService.Value is IDisposable mermaidDisposable)
+            finally
             {
-                mermaidDisposable.Dispose();
+                if (_mermaidService.IsValueCreated && _mermaidService.Value is IDisposable mermaidDisposable)
+                    mermaidDisposable.Dispose();
             }
         }
     }

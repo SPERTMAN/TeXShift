@@ -134,18 +134,7 @@ namespace TeXShift.AddIn
         /// </summary>
         public void OnDisconnection(ext_DisconnectMode RemoveMode, ref Array custom)
         {
-            // Dispose ServiceContainer to clean up WebView2 and other resources
-            _serviceContainer?.Dispose();
-            _serviceContainer = null;
-
-            // Explicitly release the COM object to ensure OneNote can shut down cleanly.
-            SafeReleaseComObject(_oneNoteApp);
-
-            // While explicit release is key, garbage collection can help clean up any other managed wrappers.
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
+            ReleaseResources();
         }
 
         /// <summary>
@@ -160,6 +149,34 @@ namespace TeXShift.AddIn
         /// </summary>
         public void OnBeginShutdown(ref Array custom)
         {
+        }
+
+        private void ReleaseResources()
+        {
+            var services = _serviceContainer;
+            _serviceContainer = null;
+            try
+            {
+                services?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                RuntimeLog.Write($"Add-in service shutdown failed: {ex}");
+            }
+            finally
+            {
+                // Clear retained references before collecting transient ribbon callback wrappers.
+                var application = _oneNoteApp;
+                _oneNoteApp = null;
+                SafeReleaseComObject(application);
+                var ribbon = _ribbon;
+                _ribbon = null;
+                SafeReleaseComObject(ribbon);
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
         }
 
         /// <summary>
@@ -191,7 +208,7 @@ namespace TeXShift.AddIn
         #region Utility Methods
 
         /// <summary>
-        /// Safely releases a COM object and sets its reference to null.
+        /// Releases a COM reference without throwing through a COM callback.
         /// </summary>
         /// <param name="obj">The COM object to release.</param>
         private void SafeReleaseComObject(object obj)
