@@ -409,7 +409,7 @@ namespace TeXShift.Core.OneNoteMeta
                 new XAttribute("content", content ?? string.Empty));
         }
 
-        private static void RemoveExistingTeXShiftMeta(XElement outline, XNamespace ns)
+        internal static void RemoveExistingTeXShiftMeta(XElement outline, XNamespace ns)
         {
             var metas = outline.Elements(ns + "Meta")
                 .Where(meta => IsTeXShiftMeta(meta))

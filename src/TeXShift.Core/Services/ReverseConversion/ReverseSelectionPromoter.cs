@@ -203,6 +203,11 @@ namespace TeXShift.Core.Services.ReverseConversion
                 return false;
             }
 
+            if (readResult.OriginalXmlNodes.Any(oe => oe.Ancestors(ns + "Outline").FirstOrDefault() != outline))
+            {
+                return false;
+            }
+
             string outlineObjectId = outline.Attribute("objectID")?.Value;
             if (string.IsNullOrWhiteSpace(outlineObjectId))
             {
@@ -221,22 +226,14 @@ namespace TeXShift.Core.Services.ReverseConversion
                 return false;
             }
 
-            var selectedRootOes = readResult.OriginalXmlNodes
-                .Select(oe => FindRootOeUnderOutline(oe, rootChildren, ns))
-                .Where(oe => oe != null)
-                .Distinct()
-                .ToList();
-
+            // OneNote marks the containing root OE when the caret is in the outline.
+            // A child-only selection must remain a selection; it must never promote the parent.
+            var selectedRootOes = new HashSet<XElement>(
+                readResult.OriginalXmlNodes.Where(oe => oe.Parent == rootChildren));
             if (selectedRootOes.Count != rootOes.Count)
             {
                 return false;
             }
-
-            if (!rootOes.All(selectedRootOes.Contains))
-            {
-                return false;
-            }
-
             if (requireValidMeta)
             {
                 var meta = TeXShiftMetaReader.ReadOutline(outline);
@@ -254,7 +251,8 @@ namespace TeXShift.Core.Services.ReverseConversion
                 PageId = readResult.PageId,
                 OriginalXmlNode = outline,
                 SourceOutlineWidth = readResult.SourceOutlineWidth,
-                PageHasTodoTagDef = preservePageHasTodoTagDef && readResult.PageHasTodoTagDef
+                PageHasTodoTagDef = preservePageHasTodoTagDef && readResult.PageHasTodoTagDef,
+                PageQuickStyleDefinitions = readResult.PageQuickStyleDefinitions
             };
             promoted.TargetObjectIds.Add(outlineObjectId);
             return true;
@@ -284,17 +282,6 @@ namespace TeXShift.Core.Services.ReverseConversion
             return oe.Descendants().Any(e =>
                 e.Attribute("selected") != null
                 && string.Equals(e.Name.LocalName, "Image", StringComparison.OrdinalIgnoreCase));
-        }
-
-        private static XElement FindRootOeUnderOutline(XElement oe, XElement rootChildren, XNamespace ns)
-        {
-            if (oe == null || rootChildren == null)
-            {
-                return null;
-            }
-
-            // Find the root-level OE under the outline's root OEChildren (works for tables and nested OEs).
-            return oe.AncestorsAndSelf(ns + "OE").FirstOrDefault(e => e.Parent == rootChildren);
         }
 
         private static XElement FindTableContainerOE(XElement oe, XNamespace ns)

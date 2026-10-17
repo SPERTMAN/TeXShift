@@ -9,6 +9,9 @@ namespace TeXShift.Core.Abstractions
     /// </summary>
     public interface IContentWriter
     {
+        /// <summary>Writes complete, identity-preserving outlines in one page update.</summary>
+        Task WriteOutlinesAsync(ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines);
+
         /// <summary>
         /// Asynchronously replaces content in OneNote based on the read result and converted XML.
         /// </summary>

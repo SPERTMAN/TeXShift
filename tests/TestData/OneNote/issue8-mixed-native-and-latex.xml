@@ -1,0 +1,32 @@
+<one:Page xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote" name="Issue8 synthetic mixed content">
+  <one:Title>
+    <one:OE>
+      <one:T><![CDATA[Issue8 synthetic mixed content]]></one:T>
+    </one:OE>
+  </one:Title>
+  <one:Outline>
+    <one:Position x="36" y="100" z="0" />
+    <one:Size width="1100" height="150" />
+    <one:OEChildren>
+      <one:OE>
+        <one:T><![CDATA[Context]]></one:T>
+        <one:OEChildren>
+          <one:OE>
+            <one:List>
+              <one:Bullet bullet="2" fontSize="11.0" />
+            </one:List>
+            <one:T><![CDATA[Training objective: model <!--[if mathML]><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>f</mi></math><![endif]--> minimizes a native loss <!--[if mathML]><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>L</mi><mo>=</mo><msub><mi>L</mi><mrow><mi>d</mi><mi>a</mi><mi>t</mi><mi>a</mi></mrow></msub></math><![endif]-->]]></one:T>
+            <one:OEChildren>
+              <one:OE>
+                <one:List>
+                  <one:Bullet bullet="3" fontSize="11.0" />
+                </one:List>
+                <one:T><![CDATA[$\mathcal{J}=\sum_{j=1}^{M}\sum_{i=1}^{N}x_{j,i}$]]></one:T>
+              </one:OE>
+            </one:OEChildren>
+          </one:OE>
+        </one:OEChildren>
+      </one:OE>
+    </one:OEChildren>
+  </one:Outline>
+</one:Page>

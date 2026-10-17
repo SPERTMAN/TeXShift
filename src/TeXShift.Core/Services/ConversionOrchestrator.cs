@@ -6,6 +6,7 @@ using TeXShift.Core.Logging;
 using TeXShift.Core.Localization;
 using TeXShift.Core.OneNote;
 using TeXShift.Core.Services.ReverseConversion;
+using TeXShift.Core.Services.ForwardConversion;
 using OneNoteInterop = Microsoft.Office.Interop.OneNote;
 
 namespace TeXShift.Core.Services
@@ -116,25 +117,25 @@ namespace TeXShift.Core.Services
                     }
                 }
 
-                var converter = _serviceContainer.CreateMarkdownConverter(readResult.SourceOutlineWidth);
-                XElement oneNoteXml;
+                var converter = new ForwardContentConverter(_serviceContainer.CreateMarkdownConverter);
+                System.Collections.Generic.IReadOnlyList<XElement> outlines;
                 using (PerformanceTraceContext.Measure("Convert.MarkdownToOneNoteXmlAsync"))
                 {
-                    oneNoteXml = await converter.ConvertToOneNoteXmlAsync(readResult.ExtractedText).ConfigureAwait(false);
+                    outlines = await converter.ConvertAsync(readResult).ConfigureAwait(false);
                 }
 
                 if (options.WriteDebugFiles)
                 {
                     using (PerformanceTraceContext.Measure("Debug.Write.ConvertedXml"))
                     {
-                        await logger.LogConvertedXmlAsync(oneNoteXml).ConfigureAwait(false);
+                        await logger.LogConvertedXmlAsync(outlines.Count == 1 ? outlines[0] : new XElement(OneNoteXml.Namespace + "Page", outlines)).ConfigureAwait(false);
                     }
                 }
 
                 var writer = _serviceContainer.CreateContentWriter(_oneNoteApp);
                 using (PerformanceTraceContext.Measure("Write.ReplaceContentAsync"))
                 {
-                    await writer.ReplaceContentAsync(readResult, oneNoteXml).ConfigureAwait(false);
+                    await writer.WriteOutlinesAsync(readResult, outlines).ConfigureAwait(false);
                 }
 
                 await OrchestratorDebugSessionHelper.LogFinalPageXmlAsync(

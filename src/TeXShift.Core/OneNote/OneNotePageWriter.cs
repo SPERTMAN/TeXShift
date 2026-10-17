@@ -54,21 +54,31 @@ namespace TeXShift.Core.OneNote
             if (!readResult.TargetObjectIds.Any())
                 throw new ArgumentException("TargetObjectIds is required", nameof(readResult));
 
-            // Build a minimal page-changes XML so we don't have to round-trip the full page XML.
-            // This avoids massive stalls on pages with large binary payloads (e.g., InkDrawing/Data base64).
-            XElement updatedOutline;
-            bool needsTodoTagDef = false;
-            IReadOnlyList<XElement> hyperlinkQuickStyles;
-            using (PerformanceTraceContext.Measure("Write.BuildUpdatedOutline", readResult.Mode.ToString()))
+            WriteOutlines(readResult, new[] { BuildUpdatedOutline(readResult, newOutlineXml) });
+        }
+
+        public Task WriteOutlinesAsync(ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
+        {
+            return Task.Run(() => WriteOutlines(readResult, outlines));
+        }
+
+        private void WriteOutlines(ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
+        {
+            if (readResult == null || string.IsNullOrEmpty(readResult.PageId))
+                throw new ArgumentException("A page ID is required.", nameof(readResult));
+            if (outlines == null || outlines.Count == 0)
+                throw new ArgumentException("At least one outline is required.", nameof(outlines));
+            foreach (var outline in outlines)
+                if (outline.Name != _ns + "Outline" || string.IsNullOrEmpty((string)outline.Attribute("objectID")))
+                    throw new ArgumentException("Every outline must have its original identity.", nameof(outlines));
+
+            bool needsTodoTagDef = outlines.Any(ContainsTodoTagIndexZero);
+            var hyperlinkQuickStyles = new System.Collections.Generic.List<XElement>();
+            foreach (var outline in outlines)
             {
-                updatedOutline = BuildUpdatedOutline(readResult, newOutlineXml);
-
-                needsTodoTagDef = ContainsTodoTagIndexZero(updatedOutline);
-                hyperlinkQuickStyles = PrepareHyperlinkQuickStyles(
-                    updatedOutline,
-                    readResult.PageQuickStyleDefinitions);
+                hyperlinkQuickStyles.AddRange(PrepareHyperlinkQuickStyles(outline,
+                    readResult.PageQuickStyleDefinitions.Concat(hyperlinkQuickStyles).ToList()));
             }
-
             var page = new XElement(_ns + "Page",
                 new XAttribute("ID", readResult.PageId),
                 // Emit explicit prefix to match OneNote's typical serialization.
@@ -88,7 +98,7 @@ namespace TeXShift.Core.OneNote
 
             page.Add(hyperlinkQuickStyles);
 
-            page.Add(updatedOutline);
+            page.Add(outlines);
 
             string updatedXml;
             using (PerformanceTraceContext.Measure("Write.Serialize.PageChangesXml"))
