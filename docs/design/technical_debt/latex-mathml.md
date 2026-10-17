@@ -16,6 +16,7 @@ LaTeX 到 MathML 转换使用 MathJax 实现，但 OneNote 对 MathML 的支持�
 | 矩阵/分数括号不拉伸 | 检测高内容并转换 `<mo>` 为 `<mfenced>` | ✅ 有效 |
 | 间距命令无效 | `<mspace>` 转换为 Unicode 空格字符 | ✅ 有效（精度有限）|
 | 公式首 token 为数字时字体错误（继承正文字体而非 Cambria Math） | 移除前置零宽空格哨兵 span，仅保留尾部哨兵 | ✅ 有效 |
+| 相邻求和、连乘、积分导入后内层符号缩小（#7） | 在 MathML 的序列容器中，从右向左将内层大型运算符及其紧邻操作数包入 `mrow`，保留已有分组和固定参数位置 | ✅ 有效 |
 
 同期实验的两条负面结论：公式后存在任何额外 run（含尾哨兵）时 OneNote 会丢弃 `display='block'`，这是块级公式被渲染成小字的原因；外层 `<mrow>` 包裹会被 OneNote 剥除。
 
@@ -72,6 +73,8 @@ LaTeX 到 MathML 转换使用 MathJax 实现，但 OneNote 对 MathML 的支持�
 
 - `TeXShift.Core/Math/MathService.cs` - LaTeX 转 MathML（WebView2 + MathJax）
 - `TeXShift.Core/Math/OneNoteMathMLAdapter.cs` - MathML 后处理与 OneNote 适配
+- `TeXShift.Core/Math/OneNoteLargeOperatorNormalizer.cs` - 相邻大型运算符分组
+- `tests/TestData/MarkdownCases/math_adjacent_large_operators.md` - #7 原例、相关运算符与嵌套结构回归用例
 - `TeXShift.Core/Resources/Math/mathjax-loader.html` - MathJax 配置
 - `docs/design/bracket-stretching.md` - 括号拉伸方案
 - `docs/design/mspace-unicode.md` - 间距转换方案

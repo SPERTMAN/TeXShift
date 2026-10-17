@@ -68,6 +68,9 @@ namespace TeXShift.Core.Math
             // Step 8: Split multi-character identifiers into single chars (stability fix)
             mathml = SplitMultiCharIdentifiers(mathml);
 
+            // Group adjacent large operators before OneNote imports their operands.
+            mathml = OneNoteLargeOperatorNormalizer.Normalize(mathml);
+
             // Step 9: Convert MathML attributes to single-quoted values to avoid OneNote inserting
             // visible stray quote characters around equations.
             mathml = ConvertAttributeQuotesToSingle(mathml);
