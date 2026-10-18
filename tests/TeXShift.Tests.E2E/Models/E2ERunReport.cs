@@ -21,6 +21,7 @@ namespace TeXShift.Tests.E2E.Models
         public DateTime StartedUtc { get; } = DateTime.UtcNow;
         public DateTime FinishedUtc { get; private set; }
         public string Operation { get; set; } = "convert";
+        public string Driver { get; set; }
         public string TestName { get; }
         public string StartMode { get; set; } = "unavailable";
         public int? OneNotePid { get; set; }

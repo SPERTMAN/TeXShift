@@ -90,6 +90,12 @@ namespace TeXShift.Tests.E2E
             var command = replayWrite
                 ? new Command("write-xml", "Replay an XML update against a disposable test page")
                 : new Command(reverse ? "reverse" : "convert", "Invoke the installed TeXShift Ribbon command and export the resulting page");
+            var driverOption = new Option<ConversionDriver>("--driver")
+            {
+                Description = "ribbon: installed add-in and dialogs (activates Ribbon); core: pipeline with default settings, without Ribbon interaction",
+                DefaultValueFactory = _ => ConversionDriver.Ribbon
+            };
+            if (!replayWrite) command.Options.Add(driverOption);
             if (replayWrite) command.Options.Add(changesOption);
             command.Options.Add(inputOption);
             command.Options.Add(markdownOption);
@@ -105,6 +111,7 @@ namespace TeXShift.Tests.E2E
                 var options = new PageTestOptions
                 {
                     Operation = reverse ? "reverse" : "convert",
+                    Driver = replayWrite ? ConversionDriver.Core : parseResult.GetValue(driverOption),
                     Input = parseResult.GetValue(inputOption),
                     Markdown = parseResult.GetValue(markdownOption),
                     Page = parseResult.GetValue(pageOption),

@@ -2,6 +2,8 @@ using System.IO;
 
 namespace TeXShift.Tests.E2E.Commands
 {
+    internal enum ConversionDriver { Ribbon, Core }
+
     internal sealed class PageTestOptions
     {
         public FileInfo Input { get; set; }
@@ -18,6 +20,7 @@ namespace TeXShift.Tests.E2E.Commands
         public string[] Select { get; set; }
 
         public string Operation { get; set; } = "convert";
+        public ConversionDriver Driver { get; set; } = ConversionDriver.Ribbon;
 
         public DirectoryInfo Output { get; set; }
 

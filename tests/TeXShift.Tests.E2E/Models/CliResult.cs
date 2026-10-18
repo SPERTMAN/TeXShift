@@ -4,6 +4,7 @@ namespace TeXShift.Tests.E2E.Models
     {
         public string Status { get; set; }
         public string Operation { get; set; }
+        public string Driver { get; set; }
         public string TestName { get; set; }
         public string OutputDirectory { get; set; }
         public OutputFiles Files { get; set; }

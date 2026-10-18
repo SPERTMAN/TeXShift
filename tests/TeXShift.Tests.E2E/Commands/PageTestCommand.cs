@@ -84,7 +84,8 @@ namespace TeXShift.Tests.E2E.Commands
 
             var run = new E2ERunReport(testName, options.Cleanup);
             run.Operation = changesTemplate == null ? options.Operation : "write-xml";
-            var cliResult = new CliResult { Operation = run.Operation, TestName = testName, OutputDirectory = output.FullName };
+            run.Driver = changesTemplate == null ? options.Driver.ToString().ToLowerInvariant() : "xml";
+            var cliResult = new CliResult { Operation = run.Operation, Driver = run.Driver, TestName = testName, OutputDirectory = output.FullName };
             int exitCode = CommandHelpers.ExitSuccess;
             TestPageManager pageManager = null;
             RibbonDriver ribbon = null;
@@ -97,7 +98,8 @@ namespace TeXShift.Tests.E2E.Commands
                     pageManager = await TestPageManager.CreateAsync().ConfigureAwait(false);
                     run.StartMode = pageManager.LaunchedOneNoteProcess ? "launched" : "attached";
                     run.OneNotePid = pageManager.OneNoteProcessId;
-                    if (changesTemplate == null) ribbon = new RibbonDriver(pageManager.MainWindowHandle);
+                    if (changesTemplate == null && options.Driver == ConversionDriver.Ribbon)
+                        ribbon = new RibbonDriver(pageManager.MainWindowHandle);
                 }).ConfigureAwait(false);
 
                 await run.StepAsync("SaveCurrentPage", async () =>
@@ -128,9 +130,15 @@ namespace TeXShift.Tests.E2E.Commands
                         if (markdownContent != null)
                             File.WriteAllText(Path.Combine(output.FullName, $"F01_Input_Markdown_{stamp}.md"), markdownContent);
                     }).ConfigureAwait(false);
-                    await run.StepAsync("PrepareRibbon", () => Task.Run(() =>
-                        ribbon.Prepare(options.Operation))).ConfigureAwait(false);
-                    await run.StepAsync("InvokeRibbon", () => ribbon.InvokeAsync(options.Operation, run.PageId, output.FullName)).ConfigureAwait(false);
+                    if (ribbon != null)
+                    {
+                        await run.StepAsync("PrepareRibbon", () => Task.Run(() =>
+                            ribbon.Prepare(options.Operation))).ConfigureAwait(false);
+                        await run.StepAsync("InvokeRibbon", () => ribbon.InvokeAsync(options.Operation, run.PageId, output.FullName)).ConfigureAwait(false);
+                    }
+                    else
+                        await run.StepAsync("InvokeCore", () => CoreConversionDriver.InvokeAsync(
+                            options.Operation, pageManager.OneNoteDispatcher, output.FullName)).ConfigureAwait(false);
                     await run.StepAsync("CaptureResult", async () =>
                     {
                         File.WriteAllText(Path.Combine(output.FullName, $"F04_Final_Page_XML_Basic_{stamp}.xml"),

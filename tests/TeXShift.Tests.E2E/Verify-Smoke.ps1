@@ -2,6 +2,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
+    [ValidateSet('ribbon', 'core')]
+    [string]$Driver = 'ribbon',
     [string]$InputFile,
     [string]$OutputDirectory
 )
@@ -18,9 +20,15 @@ function Invoke-Case {
     param([string]$Name, [string[]]$Arguments, [int]$ExpectedExit = 0)
     $output = Join-Path $OutputDirectory $Name
     New-Item -ItemType Directory -Path $output -Force | Out-Null
+    $expectedDriver = 'xml'
+    if ($Arguments[0] -in @('convert', 'reverse')) {
+        $Arguments += @('--driver', $Driver)
+        $expectedDriver = $Driver
+    }
     $json = & $runner @Arguments --output $output 2> (Join-Path $output 'stderr.txt')
     $code = $LASTEXITCODE
     $result = ($json -join "`n") | ConvertFrom-Json
+    if ($result.driver -ne $expectedDriver) { throw "$Name used the wrong conversion driver." }
     if ($code -ne $ExpectedExit -or $result.cleanupStatus -ne 'passed') {
         throw "$Name failed: exit=$code cleanup=$($result.cleanupStatus) $($result.error)"
     }
@@ -33,8 +41,8 @@ function Invoke-Case {
         $text = ($page.SelectNodes('//*[local-name()="Outline"]//*[local-name()="T"]') | ForEach-Object InnerText) -join "`n"
         return @{ Path = $final; Xml = $xml; Text = $text }
     }
-    if (-not $result.files.errorDialog) { throw "$Name did not capture the error dialog." }
-    Write-Host "${Name}: PASS (expected failure, dialog captured and dismissed)"
+    if ($Driver -eq 'ribbon' -and -not $result.files.errorDialog) { throw "$Name did not capture the error dialog." }
+    Write-Host "${Name}: PASS (expected failure, driver=$Driver)"
 }
 
 if ($InputFile) {

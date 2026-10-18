@@ -20,9 +20,9 @@ E2E 会创建测试分区、导航过去、跑完删掉。若 OneNote 此时是�
 
 运行中 `NavigateTo` 会让窗口在后台弹回可见（不夺焦），可接受。曾试过快照状态文件回写和"最近修改页"启发式，两者落点都会漂移，已否掉。
 
-退出时先释放 COM、结束 STA 线程，再向本次启动的进程发送关闭命令并等待退出。超时报告失败，不强杀进程。加载项宿主可能在 OneNote 退出后稍迟结束。
+退出时先释放 COM、结束 STA 线程，再向本次启动的进程发送关闭命令并等待退出。加载项卸载时还需断开独立宿主内的 UI Automation providers，释放 WPF 弹窗被自动化客户端访问后留下的资源。超时报告失败，不强杀进程。加载项宿主可能在 OneNote 退出后稍迟结束。
 
-`TestPageManager` 持有 Core 的 `OneNoteComDispatcher`，建页、选区、导出和恢复共用一个 STA；COM 引用只在调度回调内使用。实际转换通过 UI Automation 调用 Ribbon，由 OneNote 加载的 AddIn 及其 STA 执行。CLI 不创建转换服务。
+`TestPageManager` 持有 Core 的 `OneNoteComDispatcher`，建页、选区、导出和恢复共用一个 STA；COM 引用只在调度回调内使用。默认通过 UI Automation 调用 Ribbon，由 OneNote 加载的 AddIn 及其 STA 执行。Ribbon 选项卡操作会激活 OneNote；需要后台内容回归时使用 `--driver core`，在 CLI 内建立转换服务并复用同一 COM 调度器。两种驱动共用准备、选区、采集和收尾流程。
 
 `RibbonDriver` 负责选项卡和按钮操作、错误弹窗采集与关闭。命令完成通过常驻日志中的关联 ID、操作和页面 ID 确认，无法确认时失败。加载项在初始化检查前记录开始，在回调结束时记录结果；该记录也用于排查实际用户转换故障。UI 自动化运行在 MTA，不占用 OneNote COM 调度线程。错误弹窗使用 OneNote 提供的窗口句柄作为父窗口，后台转换不会借用其它应用的前台窗口。
 
