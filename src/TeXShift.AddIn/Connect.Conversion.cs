@@ -31,10 +31,6 @@ namespace TeXShift.AddIn
         {
             try
             {
-                if (TryShowInitializationError())
-                {
-                    return;
-                }
                 PerformConversionAsync(showSuccessDialog: false, writeDebugFiles: false);
             }
             catch (Exception ex)
@@ -47,10 +43,6 @@ namespace TeXShift.AddIn
         {
             try
             {
-                if (TryShowInitializationError())
-                {
-                    return;
-                }
                 PerformConversionAsync(showSuccessDialog: true, writeDebugFiles: true);
             }
             catch (Exception ex)
@@ -70,42 +62,50 @@ namespace TeXShift.AddIn
         /// <param name="writeDebugFiles">If true, saves conversion artifacts to the DebugOutput folder.</param>
         private async void PerformConversionAsync(bool showSuccessDialog, bool writeDebugFiles)
         {
-            try
+            using (var activity = new AddInCommandLog("convert"))
             {
-                var orchestrator = _serviceContainer.CreateConversionOrchestrator(_oneNoteApp);
-                var result = await orchestrator.ExecuteAsync(new ConversionOptions
+                try
                 {
-                    WriteDebugFiles = writeDebugFiles,
-                    ExportPdf = writeDebugFiles && (_appSettings?.Debug?.ExportPdf ?? true),
-                    DumpFullPageXml = writeDebugFiles && (_appSettings?.Debug?.DumpFullPageXml ?? false),
-                    OutputDirectory = _appSettings?.Debug?.DebugOutputPath
-                });
-
-                if (!result.Success)
-                {
-                    if (result.Error != null)
+                    if (TryShowInitializationError()) return;
+                    var orchestrator = _serviceContainer.CreateConversionOrchestrator(_oneNoteApp);
+                    var result = await orchestrator.ExecuteAsync(new ConversionOptions
                     {
-                        HandleConversionError(result.Error, result.DebugOutputFolder);
-                    }
-                    else if (result.ReadResult != null && !result.ReadResult.IsSuccess)
-                    {
-                        // Show read errors (like "no selection") using the new error dialog
-                        ShowWpfErrorDialog(
-                            result.ReadResult.ErrorMessage,
-                            string.Empty,
-                            ResolveDebugFolderPath(result.DebugOutputFolder));
-                    }
-                    return;
-                }
+                        WriteDebugFiles = writeDebugFiles,
+                        ExportPdf = writeDebugFiles && (_appSettings?.Debug?.ExportPdf ?? true),
+                        DumpFullPageXml = writeDebugFiles && (_appSettings?.Debug?.DumpFullPageXml ?? false),
+                        OutputDirectory = _appSettings?.Debug?.DebugOutputPath
+                    });
 
-                if (showSuccessDialog)
-                {
-                    ShowSuccessMessageFromResult(result);
+                    activity.PageId = result.ReadResult?.PageId;
+                    activity.Success = result.Success;
+
+                    if (!result.Success)
+                    {
+                        if (result.Error != null)
+                        {
+                            HandleConversionError(result.Error, result.DebugOutputFolder);
+                        }
+                        else if (result.ReadResult != null && !result.ReadResult.IsSuccess)
+                        {
+                            // Show read errors (like "no selection") using the new error dialog
+                            ShowWpfErrorDialog(
+                                result.ReadResult.ErrorMessage,
+                                string.Empty,
+                                ResolveDebugFolderPath(result.DebugOutputFolder));
+                        }
+                        return;
+                    }
+
+                    if (showSuccessDialog)
+                    {
+                        ShowSuccessMessageFromResult(result);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                HandleConversionError(ex, null);
+                catch (Exception ex)
+                {
+                    activity.Success = false;
+                    HandleConversionError(ex, null);
+                }
             }
         }
 

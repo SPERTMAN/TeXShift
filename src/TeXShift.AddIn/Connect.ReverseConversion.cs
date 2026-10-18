@@ -16,10 +16,6 @@ namespace TeXShift.AddIn
         {
             try
             {
-                if (TryShowInitializationError())
-                {
-                    return;
-                }
                 PerformReverseConversionAsync(showSuccessDialog: false, writeDebugFiles: false);
             }
             catch (Exception ex)
@@ -32,10 +28,6 @@ namespace TeXShift.AddIn
         {
             try
             {
-                if (TryShowInitializationError())
-                {
-                    return;
-                }
                 PerformReverseConversionAsync(showSuccessDialog: true, writeDebugFiles: true);
             }
             catch (Exception ex)
@@ -46,48 +38,56 @@ namespace TeXShift.AddIn
 
         private async void PerformReverseConversionAsync(bool showSuccessDialog, bool writeDebugFiles)
         {
-            try
+            using (var activity = new AddInCommandLog("reverse"))
             {
-                var orchestrator = _serviceContainer.CreateReverseConversionOrchestrator(_oneNoteApp);
-                var result = await orchestrator.ExecuteAsync(new ReverseConversionOptions
+                try
                 {
-                    WriteDebugFiles = writeDebugFiles,
-                    DumpFullPageXml = writeDebugFiles && (_appSettings?.Debug?.DumpFullPageXml ?? false),
-                    OutputDirectory = _appSettings?.Debug?.DebugOutputPath
-                });
-
-                if (!result.Success)
-                {
-                    if (result.Error != null)
+                    if (TryShowInitializationError()) return;
+                    var orchestrator = _serviceContainer.CreateReverseConversionOrchestrator(_oneNoteApp);
+                    var result = await orchestrator.ExecuteAsync(new ReverseConversionOptions
                     {
-                        HandleConversionError(result.Error, result.DebugOutputFolder);
-                    }
-                    else if (result.ReadResult != null && !result.ReadResult.IsSuccess)
-                    {
-                        ShowWpfErrorDialog(
-                            result.ReadResult.ErrorMessage,
-                            string.Empty,
-                            ResolveDebugFolderPath(result.DebugOutputFolder));
-                    }
-                    return;
-                }
+                        WriteDebugFiles = writeDebugFiles,
+                        DumpFullPageXml = writeDebugFiles && (_appSettings?.Debug?.DumpFullPageXml ?? false),
+                        OutputDirectory = _appSettings?.Debug?.DebugOutputPath
+                    });
 
-                if (showSuccessDialog)
-                {
-                    ShowTopMostMessageBox(
-                        string.Format(
-                            UIResources.GetString("Message_Success_ReverseConversionComplete"),
-                            GetDetectionModeLabel(result.ReadResult?.Mode ?? DetectionMode.None),
-                            result.ReverseResult?.Markdown?.Length ?? 0,
-                            result.DebugOutputFolder),
-                        UIResources.GetString("Message_Title_ReverseConversionComplete"),
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
+                    activity.PageId = result.ReadResult?.PageId;
+                    activity.Success = result.Success;
+
+                    if (!result.Success)
+                    {
+                        if (result.Error != null)
+                        {
+                            HandleConversionError(result.Error, result.DebugOutputFolder);
+                        }
+                        else if (result.ReadResult != null && !result.ReadResult.IsSuccess)
+                        {
+                            ShowWpfErrorDialog(
+                                result.ReadResult.ErrorMessage,
+                                string.Empty,
+                                ResolveDebugFolderPath(result.DebugOutputFolder));
+                        }
+                        return;
+                    }
+
+                    if (showSuccessDialog)
+                    {
+                        ShowTopMostMessageBox(
+                            string.Format(
+                                UIResources.GetString("Message_Success_ReverseConversionComplete"),
+                                GetDetectionModeLabel(result.ReadResult?.Mode ?? DetectionMode.None),
+                                result.ReverseResult?.Markdown?.Length ?? 0,
+                                result.DebugOutputFolder),
+                            UIResources.GetString("Message_Title_ReverseConversionComplete"),
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                HandleConversionError(ex, null);
+                catch (Exception ex)
+                {
+                    activity.Success = false;
+                    HandleConversionError(ex, null);
+                }
             }
         }
     }
