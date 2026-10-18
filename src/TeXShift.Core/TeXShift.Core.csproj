@@ -11,6 +11,7 @@
   <ItemGroup>
     <!-- Framework references needed for .NET Framework 4.8 SDK-style project -->
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Net.Http" />
   </ItemGroup>
 

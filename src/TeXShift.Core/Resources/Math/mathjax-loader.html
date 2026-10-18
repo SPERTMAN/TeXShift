@@ -8,6 +8,7 @@
         // MathJax configuration - must be set before loading MathJax
         MathJax = {
             startup: { typeset: false },
+            svg: { fontCache: 'none' },
             tex: {
                 packages: {'[+]': ['ams', 'newcommand', 'configmacros']},
                 // Common LaTeX macros
@@ -21,51 +22,56 @@
             }
         };
     </script>
-    <script src="https://mathjax.local/es5/tex-mml-chtml.js"></script>
+    <script src="https://mathjax.local/es5/tex-mml-svg.js"></script>
 </head>
 <body>
 <script>
     var mathJaxReady = false;
 
-    // Preload extensions that require async loading (e.g., boldsymbol)
-    function preloadExtensions() {
-        return new Promise(function(resolve) {
-            function tryPreload() {
-                try {
-                    MathJax.tex2mml('\\boldsymbol{x}', { display: false });
-                    resolve();
-                } catch (e) {
-                    if (e.retry && e.retry instanceof Promise) {
-                        e.retry.then(tryPreload).catch(resolve);
-                    } else {
-                        resolve();
-                    }
-                }
-            }
-            tryPreload();
-        });
-    }
+    MathJax.startup.promise.then(function() { mathJaxReady = true; });
 
-    // Wait for MathJax to be ready, then preload extensions
-    MathJax.startup.promise
-        .then(preloadExtensions)
-        .then(function() {
-            mathJaxReady = true;
-        });
+    function isMathJaxReady() { return mathJaxReady; }
 
-    // Function to check if MathJax is ready (called from C#)
-    function isMathJaxReady() {
-        return mathJaxReady;
-    }
-
-    // Function to convert LaTeX to MathML (called from C#)
-    function texToMml(latex, display) {
+    async function executeMathRequest(request) {
         try {
-            return MathJax.tex2mml(latex, { display: display });
-        } catch (e) {
-            return '<math xmlns="http://www.w3.org/1998/Math/MathML"><merror><mtext>' +
-                   (e.message || 'unknown') + '</mtext></merror></math>';
+            const args = request.arguments;
+            const result = request.operation === 'parse'
+                ? await MathJax.tex2mmlPromise(args.latex, {display: args.displayMode})
+                : await renderMathImage(args);
+            chrome.webview.postMessage({Id: request.id, Result: result});
+        } catch (error) {
+            chrome.webview.postMessage({Id: request.id, Error: error.message || String(error)});
         }
+    }
+
+    async function renderMathImage(request) {
+        const em = request.fontSizePt * 96 / 72;
+        const node = await MathJax.mathml2svgPromise(request.mathml, {em, ex: em / 2});
+        const svg = node.querySelector('svg');
+        const box = svg.viewBox.baseVal;
+        const width = box.width / 1000 * em;
+        const height = box.height / 1000 * em;
+        svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svg.setAttribute('width', width);
+        svg.setAttribute('height', height);
+        svg.style.color = '#000';
+        const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type: 'image/svg+xml'}));
+        try {
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.ceil(width * 3);
+            canvas.height = Math.ceil(height * 3);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            return {
+                Base64Png: canvas.toDataURL('image/png').split(',')[1],
+                WidthPt: width * 72 / 96, HeightPt: height * 72 / 96
+            };
+        } finally { URL.revokeObjectURL(url); }
     }
 </script>
 </body>

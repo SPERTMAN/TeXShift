@@ -7,8 +7,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using TeXShift.Core.Configuration;
-using TeXShift.Core.Errors;
-using TeXShift.Core.Localization;
 using TeXShift.Core.Markdown.Abstractions;
 
 namespace TeXShift.Core.Markdown.Handlers
@@ -132,17 +130,8 @@ namespace TeXShift.Core.Markdown.Handlers
             {
                 if (segment.IsDisplayMath)
                 {
-                    // Create centered OE for display math
-                    var oe = new XElement(ns + "OE",
-                        new XAttribute("alignment", "center"),
-                        new XAttribute("spaceBefore", "8.8"),
-                        new XAttribute("spaceAfter", "8.8"));
-
-                    // Convert the math inline directly
-                    var mathHtml = await ConvertDisplayMathToHtmlAsync(segment.MathInline, context).ConfigureAwait(false);
-                    oe.Add(new XElement(ns + "T", new XCData(mathHtml)));
-
-                    results.Add(oe);
+                    var latex = context.DecodeEntityPlaceholders(segment.MathInline.Content.ToString());
+                    results.Add(await context.MathRenderer.RenderDisplayAsync(latex, ns).ConfigureAwait(false));
                 }
                 else if (segment.TextInlines != null && segment.TextInlines.Any())
                 {
@@ -160,51 +149,6 @@ namespace TeXShift.Core.Markdown.Handlers
             }
 
             return results;
-        }
-
-         /// <summary>
-         /// Converts a display math MathInline to HTML/MathML for OneNote.
-         /// </summary>
-        private async Task<string> ConvertDisplayMathToHtmlAsync(MathInline mathInline, IMarkdownConverterContext context)
-        {
-            // Get MathService from context
-            var mathService = context.MathService;
-            if (mathService == null)
-            {
-                return $"$${mathInline.Content}$$";
-            }
-
-             // Auto-initialize MathService if needed
-             if (!mathService.IsInitialized)
-             {
-                 try
-                 {
-                    await mathService.InitializeAsync().ConfigureAwait(false);
-                 }
-                 catch (Exception ex)
-                 {
-                     throw new MathConversionException(
-                         Resources.GetString("Error_MathInitFailed"),
-                        $"MathService initialization failed in ParagraphHandler. {ex.GetType().Name}: {ex.Message}",
-                        ex);
-                }
-            }
-
-            try
-             {
-                  var latex = mathInline.Content.ToString();
-                  // Decode HTML entity placeholders before passing to MathJax
-                  latex = context.DecodeEntityPlaceholders(latex);
-                var mathml = await mathService.LatexToMathMLAsync(latex, displayMode: true).ConfigureAwait(false);
-                  return mathService.WrapMathMLForOneNote(mathml);
-              }
-              catch (Exception ex) when (!(ex is MathConversionException))
-              {
-                throw new MathConversionException(
-                    Resources.GetString("Error_MathConversionFailed"),
-                    $"LaTeX conversion failed for: {mathInline.Content}. {ex.GetType().Name}: {ex.Message}",
-                    ex);
-            }
         }
 
         /// <summary>

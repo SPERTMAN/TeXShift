@@ -30,14 +30,14 @@ namespace TeXShift.Core.Markdown.Handlers.Inlines
         }
 
         private readonly OneNoteStyleConfig _styleConfig;
-        private readonly IMathService _mathService;
+        private readonly MathContentRenderer _mathRenderer;
 
         public System.Func<string, string> EntityDecoder { get; set; }
 
-        public InlineRenderer(OneNoteStyleConfig styleConfig, IMathService mathService)
+        public InlineRenderer(OneNoteStyleConfig styleConfig, MathContentRenderer mathRenderer)
         {
             _styleConfig = styleConfig;
-            _mathService = mathService;
+            _mathRenderer = mathRenderer;
         }
 
         /// <summary>
@@ -343,59 +343,9 @@ namespace TeXShift.Core.Markdown.Handlers.Inlines
 
         private async Task RenderMathAsync(StringBuilder html, MathInline mathInline)
         {
-            // Handle inline math ($...$) and display math ($$...$$)
-            // DelimiterCount: 1 = $, 2 = $$
-            var isDisplayMath = mathInline.DelimiterCount == 2;
-
-            if (_mathService != null)
-            {
-                // Auto-initialize MathService if needed
-                if (!_mathService.IsInitialized)
-                {
-                    try
-                    {
-                        await _mathService.InitializeAsync().ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Trace.WriteLine(ex);
-                        // Initialization failed, show error message + LaTeX source for diagnosis
-                        var delim = isDisplayMath ? "$$" : "$";
-                        var errType = ex.GetType().Name;
-                        var errMsg = ex.InnerException != null
-                            ? $"{ex.Message} -> {ex.InnerException.GetType().Name}: {ex.InnerException.Message}"
-                            : ex.Message;
-                        html.Append($"[MathInit Error ({errType}: {HtmlEscaper.Escape(errMsg)}): {delim}{HtmlEscaper.Escape(mathInline.Content.ToString())}{delim}]");
-                        return;
-                    }
-                }
-
-                try
-                {
-                    var latex = mathInline.Content.ToString();
-                    // Decode HTML entity placeholders before passing to MathJax
-                    if (EntityDecoder != null)
-                    {
-                        latex = EntityDecoder(latex);
-                    }
-                    var mathml = await _mathService.LatexToMathMLAsync(latex, displayMode: isDisplayMath).ConfigureAwait(false);
-                    var wrappedMathml = _mathService.WrapMathMLForOneNote(mathml);
-                    html.Append(wrappedMathml);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Trace.WriteLine(ex);
-                    // On conversion error, show the LaTeX source as plain text
-                    var delim = isDisplayMath ? "$$" : "$";
-                    html.Append($"[LaTeX: {delim}{HtmlEscaper.Escape(mathInline.Content.ToString())}{delim}]");
-                }
-            }
-            else
-            {
-                // MathService not available, show LaTeX source
-                var delim = isDisplayMath ? "$$" : "$";
-                html.Append($"{delim}{HtmlEscaper.Escape(mathInline.Content.ToString())}{delim}");
-            }
+            string latex = mathInline.Content.ToString();
+            if (EntityDecoder != null) latex = EntityDecoder(latex);
+            html.Append(await _mathRenderer.RenderInlineAsync(latex, mathInline.DelimiterCount == 2).ConfigureAwait(false));
         }
     }
 }

@@ -18,6 +18,23 @@ namespace TeXShift.Tests.E2E.Commands
                 return CommandHelpers.EmitArgumentError("输出目录不能为空。", null, null, 0);
             }
 
+            TeXShift.Core.Configuration.AppSettings settings = null;
+            if (options.Settings != null)
+            {
+                if (options.Driver != ConversionDriver.Core)
+                    return CommandHelpers.EmitArgumentError("--settings 只用于 --driver core。", null, output, 0);
+                try
+                {
+                    using (var stream = options.Settings.OpenRead())
+                        settings = (TeXShift.Core.Configuration.AppSettings)new System.Runtime.Serialization.Json.DataContractJsonSerializer(
+                            typeof(TeXShift.Core.Configuration.AppSettings)).ReadObject(stream);
+                }
+                catch (Exception ex) when (ex is IOException || ex is System.Runtime.Serialization.SerializationException)
+                {
+                    return CommandHelpers.EmitArgumentError("设置文件读取失败: " + ex.Message, null, output, 0);
+                }
+            }
+
             bool hasMarkdown = !string.IsNullOrWhiteSpace(options.Markdown);
             int sourceCount = (input != null ? 1 : 0) + (hasMarkdown ? 1 : 0) + (page != null ? 1 : 0);
             if (sourceCount > 1)
@@ -115,6 +132,7 @@ namespace TeXShift.Tests.E2E.Commands
                         : await pageManager.CreateTestPageAsync(testName, markdownContent, selection).ConfigureAwait(false);
                 }).ConfigureAwait(false);
 
+                var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
                 if (changesTemplate != null)
                 {
                     await run.StepAsync("WriteXml", () => XmlWriteReplay.ExecuteAsync(
@@ -122,7 +140,6 @@ namespace TeXShift.Tests.E2E.Commands
                 }
                 else
                 {
-                    var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
                     await run.StepAsync("CaptureInput", async () =>
                     {
                         File.WriteAllText(Path.Combine(output.FullName, $"F02_Original_XML_{stamp}.xml"),
@@ -138,7 +155,7 @@ namespace TeXShift.Tests.E2E.Commands
                     }
                     else
                         await run.StepAsync("InvokeCore", () => CoreConversionDriver.InvokeAsync(
-                            options.Operation, pageManager.OneNoteDispatcher, output.FullName)).ConfigureAwait(false);
+                            options.Operation, pageManager.OneNoteDispatcher, output.FullName, settings)).ConfigureAwait(false);
                     await run.StepAsync("CaptureResult", async () =>
                     {
                         File.WriteAllText(Path.Combine(output.FullName, $"F04_Final_Page_XML_Basic_{stamp}.xml"),
@@ -146,17 +163,18 @@ namespace TeXShift.Tests.E2E.Commands
                         File.WriteAllText(Path.Combine(output.FullName, $"F08_Final_Selection_{stamp}.xml"),
                             await pageManager.GetPageSelectionXmlAsync(run.PageId).ConfigureAwait(false));
                     }).ConfigureAwait(false);
-                    await run.StepAsync("ExportPdf", async () =>
-                    {
-                        pdfPath = Path.Combine(output.FullName, $"F05_Export_{stamp}.pdf");
-                        try
-                        {
-                            if (!await pageManager.ExportPdfAsync(run.PageId, pdfPath).ConfigureAwait(false))
-                                throw new IOException("PDF export failed.");
-                        }
-                        catch { exitCode = CommandHelpers.ExitPdfFailed; throw; }
-                    }).ConfigureAwait(false);
                 }
+                await run.StepAsync("ExportPdf", async () =>
+                {
+                    pdfPath = Path.Combine(output.FullName, $"F05_Export_{stamp}.pdf");
+                    try
+                    {
+                        if (!await pageManager.ExportPageAsync(run.PageId, pdfPath,
+                            Microsoft.Office.Interop.OneNote.PublishFormat.pfPDF).ConfigureAwait(false))
+                            throw new IOException("PDF export failed.");
+                    }
+                    catch { exitCode = CommandHelpers.ExitPdfFailed; throw; }
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

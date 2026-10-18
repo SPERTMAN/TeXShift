@@ -66,7 +66,7 @@ namespace TeXShift.Core.OneNoteMeta
             string decodedSource = DecodePlainV1(encodedSource);
 
             string sigVersion = GetMetaContent(texshiftMeta, TeXShiftMetaKeys.SigVersion);
-            if (!string.Equals(sigVersion, TeXShiftMetaKeys.SigVersionValue, StringComparison.Ordinal))
+            if (sigVersion != "1" && sigVersion != TeXShiftMetaKeys.SigVersionValue)
             {
                 result.FailureReason = "TeXShift meta signature version not supported.";
                 return result;
@@ -79,7 +79,7 @@ namespace TeXShift.Core.OneNoteMeta
                 return result;
             }
 
-            string computedSig = TeXShiftMetaWriter.ComputeSignature(outline);
+            string computedSig = sigVersion == "1" ? TeXShiftMetaWriter.ComputeLegacySignature(outline) : TeXShiftMetaWriter.ComputeSignature(outline);
             if (!string.Equals(sig, computedSig, StringComparison.Ordinal))
             {
                 result.FailureReason = "TeXShift meta signature mismatch.";

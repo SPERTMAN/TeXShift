@@ -15,7 +15,7 @@ namespace TeXShift.Core.OneNoteMeta
         public const string SourceChunkPrefix = "texshift-source-";
 
         public const string SigVersion = "texshift-sigVersion";
-        public const string SigVersionValue = "1";
+        public const string SigVersionValue = "2";
         public const string Sig = "texshift-sig";
 
         public const int MaxChunkLength = 8000;

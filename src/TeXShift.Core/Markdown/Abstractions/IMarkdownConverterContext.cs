@@ -27,9 +27,9 @@ namespace TeXShift.Core.Markdown.Abstractions
         OneNoteStyleConfig StyleConfig { get; }
 
         /// <summary>
-        /// Gets the MathService for LaTeX to MathML conversion (may be null).
+        /// Gets the shared mathematical content renderer.
         /// </summary>
-        IMathService MathService { get; }
+        MathContentRenderer MathRenderer { get; }
 
         /// <summary>
         /// Gets the Mermaid render options (may be null to use defaults).

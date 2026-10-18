@@ -92,10 +92,13 @@ namespace TeXShift.Tests.E2E
                 : new Command(reverse ? "reverse" : "convert", "Invoke the installed TeXShift Ribbon command and export the resulting page");
             var driverOption = new Option<ConversionDriver>("--driver")
             {
-                Description = "ribbon: installed add-in and dialogs (activates Ribbon); core: pipeline with default settings, without Ribbon interaction",
+                Description = "ribbon: installed add-in and dialogs (activates Ribbon); core: pipeline with optional --settings, without Ribbon interaction",
                 DefaultValueFactory = _ => ConversionDriver.Ribbon
             };
-            if (!replayWrite) command.Options.Add(driverOption);
+            var settingsOption = new Option<FileInfo>("--settings") {
+                Description = "AppSettings JSON for --driver core. Does not change the installed add-in settings."
+            };
+            if (!replayWrite) { command.Options.Add(driverOption); command.Options.Add(settingsOption); }
             if (replayWrite) command.Options.Add(changesOption);
             command.Options.Add(inputOption);
             command.Options.Add(markdownOption);
@@ -112,6 +115,7 @@ namespace TeXShift.Tests.E2E
                 {
                     Operation = reverse ? "reverse" : "convert",
                     Driver = replayWrite ? ConversionDriver.Core : parseResult.GetValue(driverOption),
+                    Settings = replayWrite ? null : parseResult.GetValue(settingsOption),
                     Input = parseResult.GetValue(inputOption),
                     Markdown = parseResult.GetValue(markdownOption),
                     Page = parseResult.GetValue(pageOption),
@@ -183,18 +187,24 @@ namespace TeXShift.Tests.E2E
 
             var pageOption = new Option<string>("--page")
             {
-                Description = "Print basic XML for the specified OneNote page ID"
+                Description = "OneNote page ID to inspect or export"
             };
 
             var outputOption = new Option<FileInfo>("--output", "-o")
             {
-                Description = "Write XML to a UTF-8 file instead of stdout"
+                Description = "Output file; required for one/pdf. XML defaults to stdout."
+            };
+            var formatOption = new Option<DumpFormat>("--format")
+            {
+                Description = "xml: basic page/hierarchy XML; one: native page snapshot; pdf: rendered page",
+                DefaultValueFactory = _ => DumpFormat.Xml
             };
 
-            var command = new Command("dump", "Inspect OneNote XML without changing content");
+            var command = new Command("dump", "Inspect or export OneNote content");
             command.Options.Add(hierarchyOption);
             command.Options.Add(pageOption);
             command.Options.Add(outputOption);
+            command.Options.Add(formatOption);
 
             command.SetAction(async (parseResult, cancellationToken) =>
             {
@@ -202,7 +212,7 @@ namespace TeXShift.Tests.E2E
                 var page = parseResult.GetValue(pageOption);
                 var output = parseResult.GetValue(outputOption);
 
-                return await DumpCommand.RunAsync(hierarchy, page, output).ConfigureAwait(false);
+                return await DumpCommand.RunAsync(hierarchy, page, output, parseResult.GetValue(formatOption)).ConfigureAwait(false);
             });
 
             return command;

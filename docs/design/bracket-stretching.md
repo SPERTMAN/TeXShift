@@ -24,7 +24,7 @@ MathJax 生成的 MathML 中，矩阵和 `\left...\right` 括号使用 `<mo>` �
 
 ## 解决方案
 
-在 `MathService.ConvertMatrixBracketsToMfenced()` 中，检测 `<mrow><mo>BRACKET</mo>...CONTENT...<mo>BRACKET</mo></mrow>` 模式，当内容包含高元素时转换为 `<mfenced>`。
+在 `OneNoteNativeMathRenderer.ConvertFences()` 中，检测 `<mrow><mo>BRACKET</mo>...CONTENT...<mo>BRACKET</mo></mrow>` 模式，当内容包含高元素时转换为 `<mfenced>`。
 
 ### 支持的括号类型
 
@@ -51,10 +51,8 @@ MathJax 生成的 MathML 中，矩阵和 `\left...\right` 括号使用 `<mo>` �
 
 普通括号如 `(a + b)` 不包含高元素，保持原样并添加 `fence="false"` 防止 OneNote 错误转换。
 
-## 已知限制
-
-同类型嵌套括号 `\left(\left(\frac{}{}\right)\right)` 可能匹配不正确，但此写法很少见。
+按后序遍历处理内外层括号，`separators=""` 避免插入分隔符；显式 `stretchy="false"` 的括号保持原样。
 
 ## 相关文件
 
-- `TeXShift.Core/Math/MathService.cs` - `ConvertMatrixBracketsToMfenced()`
+- `src/TeXShift.Core/Math/OneNoteNativeMathRenderer.cs` - `ConvertFences()`

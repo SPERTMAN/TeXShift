@@ -45,7 +45,7 @@ namespace TeXShift.Core.Services
         // Singleton instances (shared for entire add-in lifetime)
         private readonly Lazy<OneNoteStyleConfig> _styleConfig;
         private readonly Lazy<MarkdownPipeline> _markdownPipeline;
-        private readonly Lazy<IMathService> _mathService;
+        private readonly Lazy<IMathEngine> _mathEngine;
         private readonly Lazy<IMermaidService> _mermaidService;
         private readonly object _oneNoteDispatcherLock = new object();
         private OneNoteComDispatcher _oneNoteDispatcher;
@@ -56,6 +56,29 @@ namespace TeXShift.Core.Services
         /// Set this before conversion to apply theme, maxWidth, maxHeight settings.
         /// </summary>
         public MermaidRenderOptions MermaidOptions { get; set; }
+        public MathSettings MathSettings { get; set; } = new MathSettings();
+
+        public void ApplySettings(AppSettings settings)
+        {
+            var code = settings.CodeBlock ?? new CodeBlockStyleSettings();
+            StyleConfig.SetCodeBlockStyle(code.BackgroundColor, code.TextColor, code.FontFamily,
+                code.FontSize, code.SpaceBetween, code.EnableSyntaxHighlight);
+            var inline = settings.InlineCode ?? new InlineCodeStyleSettings();
+            StyleConfig.SetInlineCodeStyle(inline.FontFamily, inline.BackgroundColor);
+            StyleConfig.SetQuoteBlockStyle((settings.QuoteBlock ?? new QuoteBlockStyleSettings()).BackgroundColor);
+            var headings = settings.Headings ?? new HeadingStyleSettings();
+            for (int i = 1; i <= 6; i++) StyleConfig.SetHeadingFont(i, headings.GetFontSize(i));
+            MathSettings = settings.Math ?? new MathSettings();
+            var mermaid = settings.Mermaid ?? new MermaidSettings();
+            MermaidOptions = new MermaidRenderOptions {
+                Theme = mermaid.Theme ?? "default", MaxWidth = mermaid.MaxWidth > 0 ? mermaid.MaxWidth : 1920,
+                MaxHeight = mermaid.MaxHeight > 0 ? mermaid.MaxHeight : 1080
+            };
+            StyleConfig.SetHorizontalRuleStyle((settings.HorizontalRule?.UseImage ?? true)
+                ? OneNoteStyleConfig.HorizontalRuleMode.Image : OneNoteStyleConfig.HorizontalRuleMode.Character,
+                "#888888", 90, '─', 2325);
+            StyleConfig.SetReverseConversionOptions((settings.ReverseConversion ?? new ReverseConversionSettings()).TryRecognizeNonTeXShiftFormats);
+        }
 
         public ServiceContainer()
         {
@@ -89,13 +112,7 @@ namespace TeXShift.Core.Services
                     .Build()
             );
 
-            _mathService = new Lazy<IMathService>(() =>
-            {
-                var service = new MathService();
-                // Note: InitializeAsync() should be called before first use
-                // This is handled in CreateMarkdownConverter
-                return service;
-            });
+            _mathEngine = new Lazy<IMathEngine>(() => new MathJaxEngine());
 
             _mermaidService = new Lazy<IMermaidService>(() =>
             {
@@ -118,10 +135,10 @@ namespace TeXShift.Core.Services
         public MarkdownPipeline MarkdownPipeline => _markdownPipeline.Value;
 
         /// <summary>
-        /// Gets the shared MathService instance for LaTeX to MathML conversion.
+        /// Gets the shared MathEngine instance for LaTeX to MathML conversion.
         /// Thread-safe and requires WebView2 initialization, so we cache it.
         /// </summary>
-        public IMathService MathService => _mathService.Value;
+        public IMathEngine MathEngine => _mathEngine.Value;
 
         /// <summary>
         /// Gets the shared MermaidService instance for Mermaid diagram rendering.
@@ -149,11 +166,11 @@ namespace TeXShift.Core.Services
         /// <summary>
         /// Creates a new IMarkdownConverter instance.
         /// Transient lifetime: new instance per call.
-        /// Uses singleton StyleConfig, MarkdownPipeline, and MathService for efficiency.
+        /// Uses singleton StyleConfig, MarkdownPipeline, and MathEngine for efficiency.
         /// </summary>
         public IMarkdownConverter CreateMarkdownConverter(double? sourceOutlineWidth = null)
         {
-            return new MarkdownToOneNoteConverter(StyleConfig, MarkdownPipeline, MathService, MermaidService, MermaidOptions, sourceOutlineWidth);
+            return new MarkdownToOneNoteConverter(StyleConfig, MarkdownPipeline, MathEngine, MermaidService, MermaidOptions, sourceOutlineWidth, MathSettings);
         }
 
         /// <summary>
@@ -228,7 +245,7 @@ namespace TeXShift.Core.Services
         }
 
         /// <summary>
-        /// Disposes managed resources, including the MathService's WebView2 instance.
+        /// Disposes managed resources, including the MathEngine's WebView2 instance.
         /// </summary>
         public void Dispose()
         {
@@ -237,7 +254,7 @@ namespace TeXShift.Core.Services
 
             try
             {
-                if (_mathService.IsValueCreated && _mathService.Value is IDisposable disposable)
+                if (_mathEngine.IsValueCreated && _mathEngine.Value is IDisposable disposable)
                     disposable.Dispose();
             }
             finally

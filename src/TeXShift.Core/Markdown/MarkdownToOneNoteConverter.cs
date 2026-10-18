@@ -42,7 +42,7 @@ namespace TeXShift.Core.Markdown
         // Explicit implementation of IMarkdownConverterContext properties
         public XNamespace OneNoteNamespace { get; } = OneNoteXml.Namespace;
         public OneNoteStyleConfig StyleConfig { get; }
-        public IMathService MathService { get; }
+        public MathContentRenderer MathRenderer { get; }
         public IMermaidService MermaidService { get; }
         public MermaidRenderOptions MermaidOptions { get; }
         public int QuoteNestingDepth => _quoteNestingDepth;
@@ -65,21 +65,22 @@ namespace TeXShift.Core.Markdown
         public MarkdownToOneNoteConverter(
             OneNoteStyleConfig styleConfig,
             MarkdownPipeline pipeline,
-            IMathService mathService,
+            IMathEngine mathEngine,
             IMermaidService mermaidService,
             MermaidRenderOptions mermaidOptions = null,
-            double? sourceOutlineWidth = null)
+            double? sourceOutlineWidth = null,
+            MathSettings mathSettings = null)
         {
             StyleConfig = styleConfig ?? throw new ArgumentNullException(nameof(styleConfig));
             _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
-            MathService = mathService;
+            MathRenderer = new MathContentRenderer(mathEngine, mathSettings);
             MermaidService = mermaidService;
             MermaidOptions = mermaidOptions;
             SourceOutlineWidth = sourceOutlineWidth;
             _initialWidth = sourceOutlineWidth ?? StyleConfig.GetQuoteBlockStyle().BaseWidth;
 
             // Create the inline renderer with dependencies
-            _inlineRenderer = new InlineRenderer(styleConfig, mathService);
+            _inlineRenderer = new InlineRenderer(styleConfig, MathRenderer);
 
             // Create the Mermaid handler (used for fenced code blocks with mermaid info string)
             _mermaidBlockHandler = new MermaidBlockHandler(mermaidService);
@@ -97,7 +98,7 @@ namespace TeXShift.Core.Markdown
                 { typeof(ThematicBreakBlock), new HorizontalRuleHandler() },
                 { typeof(QuoteBlock), new QuoteBlockHandler() },
                 { typeof(Table), new TableHandler() },
-                { typeof(MathBlock), new MathBlockHandler(mathService) }
+                { typeof(MathBlock), new MathBlockHandler() }
             };
         }
 

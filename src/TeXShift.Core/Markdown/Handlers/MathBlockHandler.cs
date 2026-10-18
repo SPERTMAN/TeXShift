@@ -4,11 +4,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Markdig.Extensions.Mathematics;
 using Markdig.Syntax;
-using TeXShift.Core.Errors;
-using TeXShift.Core.Localization;
 using TeXShift.Core.Markdown.Abstractions;
-using TeXShift.Core.Math;
-using TeXShift.Core.Utils;
 
 namespace TeXShift.Core.Markdown.Handlers
 {
@@ -17,13 +13,6 @@ namespace TeXShift.Core.Markdown.Handlers
     /// </summary>
     internal class MathBlockHandler : IBlockHandler
     {
-        private readonly IMathService _mathService;
-
-        public MathBlockHandler(IMathService mathService)
-        {
-            _mathService = mathService;
-        }
-
         public async Task<IReadOnlyList<XElement>> HandleAsync(Block block, IMarkdownConverterContext context)
         {
             var mathBlock = block as MathBlock;
@@ -42,60 +31,7 @@ namespace TeXShift.Core.Markdown.Handlers
             // Decode HTML entity placeholders before passing to MathJax
             latex = context.DecodeEntityPlaceholders(latex);
 
-            // Check if MathService is available
-            if (_mathService == null)
-            {
-                var fallbackOe = new XElement(context.OneNoteNamespace + "OE",
-                    new XAttribute("alignment", "center"),
-                    new XElement(context.OneNoteNamespace + "T",
-                        new XCData($"$${OneNoteHtmlTextEscaper.Escape(latex)}$$")));
-                return new[] { fallbackOe };
-            }
-
-            // Auto-initialize MathService if needed
-            if (!_mathService.IsInitialized)
-            {
-                try
-                {
-                    await _mathService.InitializeAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex) when (!(ex is MathConversionException))
-                {
-                    throw new MathConversionException(
-                        Resources.GetString("Error_MathInitFailed"),
-                        $"MathService initialization failed in MathBlockHandler. {ex.GetType().Name}: {ex.Message}",
-                        ex);
-                }
-            }
-
-            // Convert LaTeX to MathML using MathJax
-            string mathml;
-            try
-            {
-                // Use displayMode: true for block-level math
-                mathml = await _mathService.LatexToMathMLAsync(latex, displayMode: true).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (!(ex is MathConversionException))
-            {
-                throw new MathConversionException(
-                    Resources.GetString("Error_MathConversionFailed"),
-                    $"LaTeX conversion failed for block math: {latex}. {ex.GetType().Name}: {ex.Message}",
-                    ex);
-            }
-
-            // Wrap MathML for OneNote
-            var wrappedMathml = _mathService.WrapMathMLForOneNote(mathml);
-
-            // Create OneNote OE element with proper styling for block math
-            // Block math should be centered with math font
-            var oe = new XElement(context.OneNoteNamespace + "OE",
-                new XAttribute("alignment", "center"),
-                new XAttribute("spaceBefore", "8.8"),
-                new XAttribute("spaceAfter", "8.8"),
-                new XElement(context.OneNoteNamespace + "T",
-                    new XCData(wrappedMathml)));
-
-            return new[] { oe };
+            return new[] { await context.MathRenderer.RenderDisplayAsync(latex, context.OneNoteNamespace).ConfigureAwait(false) };
         }
 
         private string ExtractLatexContent(MathBlock mathBlock)

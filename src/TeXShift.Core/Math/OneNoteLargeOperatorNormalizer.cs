@@ -9,13 +9,10 @@ namespace TeXShift.Core.Math
     internal static class OneNoteLargeOperatorNormalizer
     {
         private const string MathNamespace = "http://www.w3.org/1998/Math/MathML";
-        private const string LargeOperators = "∏∐∑∫∬∭∮∯∰∱∲∳⋀⋁⋂⋃⨀⨁⨂⨃⨄⨅⨆⨉⨊⨋⨌⨍⨎⨏⨐⨑⨒⨓⨔⨕⨖⨗⨘⨙⨚⨛⨜";
+        internal const string LargeOperators = "∏∐∑∫∬∭∮∯∰∱∲∳⋀⋁⋂⋃⨀⨁⨂⨃⨄⨅⨆⨉⨊⨋⨌⨍⨎⨏⨐⨑⨒⨓⨔⨕⨖⨗⨘⨙⨚⨛⨜";
 
-        internal static string Normalize(string mathml)
+        internal static void Normalize(XElement math)
         {
-            var math = XElement.Parse(mathml, LoadOptions.PreserveWhitespace);
-            bool changed = false;
-
             // Only inferred rows have a sequence of operands. Script, fraction, root-index,
             // and table-row children occupy fixed slots and must never be combined.
             foreach (var row in math.DescendantsAndSelf().Where(IsInferredRow).Reverse().ToArray())
@@ -53,12 +50,9 @@ namespace TeXShift.Core.Math
                         operand = group;
                     }
 
-                    changed = true;
                     start = end;
                 }
             }
-
-            return changed ? math.ToString(SaveOptions.DisableFormatting) : mathml;
         }
 
         private static bool IsInferredRow(XElement element)

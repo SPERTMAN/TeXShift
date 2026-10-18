@@ -34,6 +34,9 @@ namespace TeXShift.Core.Configuration
         public MermaidSettings Mermaid { get; set; }
 
         [DataMember]
+        public MathSettings Math { get; set; }
+
+        [DataMember]
         public HorizontalRuleSettings HorizontalRule { get; set; }
 
         [DataMember]
@@ -55,6 +58,7 @@ namespace TeXShift.Core.Configuration
             Layout = new LayoutSettings();
             Image = new ImageSettings();
             Mermaid = new MermaidSettings();
+            Math = new MathSettings();
             HorizontalRule = new HorizontalRuleSettings();
             ReverseConversion = new ReverseConversionSettings();
         }
@@ -66,6 +70,18 @@ namespace TeXShift.Core.Configuration
         {
             return new AppSettings();
         }
+    }
+
+    [DataContract]
+    public sealed class MathSettings
+    {
+        [DataMember]
+        public bool DisplayAsImage { get; set; }
+        [DataMember]
+        public double DisplayFontSize { get; set; } = 11;
+
+        [OnDeserializing]
+        private void InitializeDefaults(StreamingContext context) { DisplayFontSize = 11; }
     }
 
     /// <summary>

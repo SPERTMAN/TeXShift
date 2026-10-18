@@ -1,80 +1,42 @@
-# LaTeX/MathML 技术债
+# 数学排版与 OneNote 适配
 
-## 概述
+## 转换边界
 
-LaTeX 到 MathML 转换使用 MathJax 实现，但 OneNote 对 MathML 的支持有限，导致部分公式无法正确显示。
+`MathJaxEngine` 在专用 STA 上负责 LaTeX → 标准 MathML，以及标准 MathML → SVG → PNG。`MathExpression` 保留源码、显示模式和不可变的 MathML；OneNote 适配只修改副本。
 
-## 已验证的修复
+`MathContentRenderer` 统一行内和独立公式的输出。默认使用 `OneNoteNativeMathRenderer`，保留 OneNote 原生可编辑公式。设置中的高保真图片选项只作用于独立公式：OneNote 的 OE 内容模型不能把图片和文本组成同一行。图片使用白底 PNG，按设置字号输出三倍像素密度。
 
-| 问题 | 修复 | 状态 |
-|------|------|------|
-| `sin(x)` 等函数公式消失 | 移除 `&#x2061;` + `(` 组合 | ✅ 有效 |
-| 括号大小不一致 | 添加 `fence="false"` 到括号 | ✅ 有效 |
-| 逗号消失 | 同上（阻止 mfenced 转换） | ✅ 有效 |
-| OneNote API 阻塞 | 移除 `stretchy="false"` | ✅ 必须（不移除会导致 API 无响应）|
-| 页面更新时函数名变斜体 | 预先拆分多字符标识符为单字符 `<mml:mi>sin</mml:mi>` → `<mml:mrow><mml:mi>s</mml:mi>...</mml:mrow>` | ✅ 有效 |
-| 矩阵/分数括号不拉伸 | 检测高内容并转换 `<mo>` 为 `<mfenced>` | ✅ 有效 |
-| 间距命令无效 | `<mspace>` 转换为 Unicode 空格字符 | ✅ 有效（精度有限）|
-| 公式首 token 为数字时字体错误（继承正文字体而非 Cambria Math） | 移除前置零宽空格哨兵 span，仅保留尾部哨兵 | ✅ 有效 |
-| 相邻求和、连乘、积分导入后内层符号缩小（#7） | 在 MathML 的序列容器中，从右向左将内层大型运算符及其紧邻操作数包入 `mrow`，保留已有分组和固定参数位置 | ✅ 有效 |
+独立公式字号由 `Math.DisplayFontSize` 控制；行内公式跟随正文。
 
-同期实验的两条负面结论：公式后存在任何额外 run（含尾哨兵）时 OneNote 会丢弃 `display='block'`，这是块级公式被渲染成小字的原因；外层 `<mrow>` 包裹会被 OneNote 剥除。
+原生输出由 `MathStyleResolver` 解析作用域中的 `displaystyle`、`scriptlevel` 和 `mathsize`，再由 `OneNoteNativeMathRenderer` 适配宿主。图片输出直接使用标准 MathML，保留 MathJax 的样式、字号和间距排版。
 
-## 未解决的问题
+## 原生输出规则
 
-### 1. LaTeX 换行符 `\\`
+- 独立公式的文本仅包含 MathML 条件注释；额外文本 run 会使 OneNote 改用行内布局。行内公式在前端使用 Cambria Math 零宽空格建立公式字体，避免开头数字并入正文；尾部零宽空格保持行内布局。
+- 相对 `mathsize` 换算为绝对 pt，避免 OneNote 的相对字号比例失真。
+- 紧凑样式中的大型运算符设置 `largeop=false`；默认可移动的上下限转为侧边上下标，显式 `\limits` 保留。
+- 求和、连乘、积分等运算符默认 `stretchy=false`；显式伸缩属性保留。相邻大型运算符的宿主分组由 `OneNoteLargeOperatorNormalizer` 处理。
+- 高内容的括号按树结构转为 `mfenced`，保留普通逗号、嵌套和单边括号，见 [括号拉伸](../bracket-stretching.md)。
+- `mspace` 近似为 Unicode 空格，见 [间距转换](../mspace-unicode.md)。函数应用符、文本 token 和多字符标识符的兼容处理也集中于原生渲染器。
 
-**现象**：非矩阵环境中的 `\\` 换行符不生效，`a \\ b` 显示为 `ab`
+## 宿主限制
 
-**原因**：
-- MathJax 将 `\\` 转换为 `<mspace linebreak="newline"/>`
-- OneNote 不支持 `linebreak` 属性
+OneNote 原生导入会忽略 `scriptlevel` 的部分排版效果，同一公式中的局部 `mathsize` 会影响其它部分，`\dfrac` / `\tfrac` 的局部样式也无法完整保留。`\!` 负间距和非矩阵环境的换行仍有损失。需要这些效果时，独立公式可选择高保真图片；图片通过反向转换恢复 LaTeX 后再编辑。
 
-**可能的解决方案**：
-- 将 `<mspace linebreak="newline"/>` 转换为 `<mtable>` 结构
-- 复杂度高，可能影响公式对齐
+OneNote 16.0.20430.20182 的独立公式居中存在布局问题：`OE alignment="center"` 保存并读回后仍在，但公式显示、PDF 导出均靠左；同式右对齐有效。手动居中能改变当前会话显示，重启后恢复靠左，PDF 也不采用该临时显示位置。简单式、分式和矩阵均可复现。选中居中的普通文本 `x+y`，用 OneNote 自带的 Alt+= 转为公式也立即靠左，排除了 TeXShift 的 MathML 生成路径。
 
-**当前状态**：接受限制，建议用户使用多个公式块代替
+[OfficeMath](https://devblogs.microsoft.com/math-in-office/officemath/) 根据公式前后的段落边界判定行内或独立布局；[数学段落有独立的对齐设置](https://devblogs.microsoft.com/math-in-office/default-math-properties/)。同一行添加零宽普通文本会让 OneNote 移除读回 MathML 的 `display="block"`，改用行内布局，居中随之生效，但大型运算符缩小、上下限移到侧边。
 
-**注意**：矩阵内的 `\\` 正常工作，因为矩阵使用 `<mtr>` 行元素
+原生 `.one` 快照中，`ParagraphAlignment=1`、`LayoutAlignmentInParent` 和 `LayoutAlignmentSelf` 的居中值均已保存。手动再次居中只改变当前编辑器显示；排除标识符、时间和作者元数据后，操作前后的原生对象树一致。故追加同样的段落属性无法修正重载和导出时的独立公式布局。
 
-### 2. 页面其他公式变化
+手动居中前后，同一选区的剪贴板 HTML 和 MathML 有效字节一致，HTML 中的数学段落仍为 `m:jc="left"`。私有格式中的变化也出现在未修改内容的连续复制中，不能据此推断居中属性。OneNote 内部复制并选择“保留源格式”后，独立公式仍靠左；Word 同时带有段落 `text-align:center`、OMML `m:jc="center"` 和 RTF `\mjc2` 的公式，经同样粘贴路径也无法保留居中。读取页面 XML 和导出 PDF 时，当前编辑器仍可显示居中，PDF 则靠左；正常重启后编辑器恢复靠左。剪贴板路径未提供可持久化的原生居中方案。测试粘贴时须选择“保留源格式”，默认粘贴可能退化为线性文本。
 
-**现象**：转换某些公式时，页面上已有的其他公式会被重新解析，导致格式变化
+`one:T` 能识别 Office HTML 的旧命名空间 `http://schemas.microsoft.com/office/2004/12/omml`，其 run 使用 HTML 文本而非 OOXML 的 `m:t`；混用格式可导致宿主崩溃。Word 导出的合法 Office HTML 同样不能保留独立公式居中。表格可以居中整个公式容器，但自动列宽会使长公式折行或裁切，不作为公式输出结构。
 
-**原因**：不符合 OneNote 预期的 MathML 格式会触发整页重解析
+## 源码与回归
 
-**已排除**：与"写入动作本身"无关。实测反复以相同载荷回写已转换页面（只回写 Outline / 回写整页两种形态，以及每轮向 Outline 新增一个原生公式），`math_block_coverage.md` 的 12 个公式（含矩阵、积分、`mfenced` 拉伸、长式子）CDATA 逐字节不变，`<br>` 计数恒为 0。新增公式也不会扰动同一 Outline 内已有的公式。
+Outline 元数据保存完整 Markdown，内容校验通过时用于反向转换。签名版本 2 区分上下标、分式和根式结构，同时归一化 OneNote 的上下限位置改写；旧版签名继续可读。图片的 alt 另存版本化 LaTeX，在 Outline 元数据丢失时仍可恢复公式。
 
-**状态**：需要进一步分析哪些结构会触发此问题。复现思路：喂入含可疑公式的 Markdown，转换后比对页内其他公式的 CDATA 哈希。
+`tests/TestData/MarkdownCases/math_styles.md` 覆盖四种数学样式、局部字号、嵌套上下标、分式、积分、括号和矩阵；`math_adjacent_large_operators.md` 覆盖连续大型运算符。`tests/TestData/Settings/math-images.json` 可通过 E2E 的 `--driver core --settings` 验证图片输出。验证同时检查 OneNote 导出 PDF 和反向转换结果。
 
-## 支持的公式类型
-
-以下公式类型经测试可正常工作：
-- 基本运算：`a + b`, `a - b`, `a \times b`, `a \div b`
-- 分数：`\frac{a}{b}`
-- 上下标：`x^2`, `x_i`, `x_i^2`
-- 根号：`\sqrt{x}`, `\sqrt[n]{x}`
-- 向量：`\vec{a}`
-- 希腊字母：`\alpha`, `\beta`, `\pi` 等
-- 简单函数：`\sin(x)`, `\cos(x)`, `\log(x)` 等
-- 极限（无上标）：`\lim_{x \to 0}`
-- 简单括号组合：`(a, b, c)`, `[a, b]`
-- 单个求和/求积：`\sum_{i=1}^{n} i`, `\prod_{i=1}^{n} i`
-- 连续多个带上下限的大运算符：`\sum_{i=1}^{n} \sum_{j=1}^{m} a_{ij}`
-- 矩阵：`pmatrix`, `bmatrix`, `vmatrix` 等（括号自动拉伸）
-- 自动拉伸括号：`\left( \frac{a}{b} \right)` 等
-
-## 不支持/有问题的公式类型
-
-- 非矩阵环境的换行：`a \\ b`
-
-## 相关文件
-
-- `TeXShift.Core/Math/MathService.cs` - LaTeX 转 MathML（WebView2 + MathJax）
-- `TeXShift.Core/Math/OneNoteMathMLAdapter.cs` - MathML 后处理与 OneNote 适配
-- `TeXShift.Core/Math/OneNoteLargeOperatorNormalizer.cs` - 相邻大型运算符分组
-- `tests/TestData/MarkdownCases/math_adjacent_large_operators.md` - #7 原例、相关运算符与嵌套结构回归用例
-- `TeXShift.Core/Resources/Math/mathjax-loader.html` - MathJax 配置
-- `docs/design/bracket-stretching.md` - 括号拉伸方案
-- `docs/design/mspace-unicode.md` - 间距转换方案
+`OneNoteWrites/math-alignment.xml` 直接对照独立公式左/中/右对齐、行内公式居中和普通文本居中，隔离 MathJax 与渲染器。执行 `TeXShift.Tests.E2E.exe write-xml --markdown seed --changes tests/TestData/OneNoteWrites/math-alignment.xml --output TestResults/math-alignment`；当前宿主的预期复现是独立公式居中失败，其余四组对齐有效。CLI 成功只代表写入与导出完成，需检查 PDF 中的位置和公式样式。

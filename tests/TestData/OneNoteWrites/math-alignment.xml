@@ -1,0 +1,27 @@
+<one:Page xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote" ID="{{pageId}}">
+  <one:Outline objectID="{{outlineId}}">
+    <one:Size width="500" height="500" />
+    <one:OEChildren>
+      <one:OE><one:T><![CDATA[Display: left]]></one:T></one:OE>
+      <one:OE alignment="left" style="font-family:Cambria Math;font-size:11pt" spaceBefore="8" spaceAfter="8">
+        <one:T><![CDATA[<!--[if mathML]><math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><munderover><mo stretchy='false'>∑</mo><mn>1</mn><mi>n</mi></munderover><mfrac><mi>a</mi><mi>b</mi></mfrac></math><![endif]-->]]></one:T>
+      </one:OE>
+      <one:OE><one:T><![CDATA[Display: center]]></one:T></one:OE>
+      <one:OE alignment="center" style="font-family:Cambria Math;font-size:11pt" spaceBefore="8" spaceAfter="8">
+        <one:T><![CDATA[<!--[if mathML]><math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><munderover><mo stretchy='false'>∑</mo><mn>1</mn><mi>n</mi></munderover><mfrac><mi>a</mi><mi>b</mi></mfrac></math><![endif]-->]]></one:T>
+      </one:OE>
+      <one:OE><one:T><![CDATA[Display: right]]></one:T></one:OE>
+      <one:OE alignment="right" style="font-family:Cambria Math;font-size:11pt" spaceBefore="8" spaceAfter="8">
+        <one:T><![CDATA[<!--[if mathML]><math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><munderover><mo stretchy='false'>∑</mo><mn>1</mn><mi>n</mi></munderover><mfrac><mi>a</mi><mi>b</mi></mfrac></math><![endif]-->]]></one:T>
+      </one:OE>
+      <one:OE><one:T><![CDATA[Inline: center]]></one:T></one:OE>
+      <one:OE alignment="center" style="font-family:Cambria Math;font-size:11pt" spaceBefore="8" spaceAfter="8">
+        <one:T><![CDATA[<!--[if mathML]><math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><munderover><mo stretchy='false'>∑</mo><mn>1</mn><mi>n</mi></munderover><mfrac><mi>a</mi><mi>b</mi></mfrac></math><![endif]--><span lang='x-none'>&#8203;</span>]]></one:T>
+      </one:OE>
+      <one:OE><one:T><![CDATA[Text: center]]></one:T></one:OE>
+      <one:OE alignment="center" style="font-family:Cambria Math;font-size:11pt" spaceBefore="8" spaceAfter="8">
+        <one:T><![CDATA[a + b]]></one:T>
+      </one:OE>
+    </one:OEChildren>
+  </one:Outline>
+</one:Page>

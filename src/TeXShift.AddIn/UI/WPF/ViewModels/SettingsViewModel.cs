@@ -180,6 +180,13 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
 
         #endregion
 
+        private bool _displayMathAsImage;
+        public bool DisplayMathAsImage { get => _displayMathAsImage; set => SetProperty(ref _displayMathAsImage, value); }
+        private double _mathFontSize = 11;
+        public double MathFontSize { get => _mathFontSize; set => SetProperty(ref _mathFontSize, value); }
+        public string MathSectionTitle => UIResources.GetString("Settings_Section_Math");
+        public string MathImageLabel => UIResources.GetString("Settings_Math_Image");
+
         #region Mermaid Settings
 
         private string _mermaidTheme;
@@ -268,6 +275,7 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
         public string BackgroundColorLabel => UIResources.GetString("Settings_Label_BackgroundColor");
         public string TextColorLabel => UIResources.GetString("Settings_Label_TextColor");
         public string FontLabel => UIResources.GetString("Settings_Label_Font");
+        public string DisplayMathFontSizeLabel => UIResources.GetString("Settings_MathFontSize");
         public string FontSizeLabel => UIResources.GetString("Settings_Label_FontSize");
         public string LineSpacingLabel => UIResources.GetString("Settings_Label_LineSpacing");
         public string ThemeLabel => UIResources.GetString("Settings_Label_Theme");
@@ -398,6 +406,9 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
             var inlineCodeSettings = settings.InlineCode ?? new InlineCodeStyleSettings();
             var quoteBlockSettings = settings.QuoteBlock ?? new QuoteBlockStyleSettings();
             var headingSettings = settings.Headings ?? new HeadingStyleSettings();
+            var mathSettings = settings.Math ?? new MathSettings();
+            DisplayMathAsImage = mathSettings.DisplayAsImage;
+            MathFontSize = mathSettings.DisplayFontSize;
             var mermaidSettings = settings.Mermaid ?? new MermaidSettings();
 
             var codeBlockFontFamily = string.IsNullOrWhiteSpace(codeBlockSettings.FontFamily) ? "Consolas" : codeBlockSettings.FontFamily;
@@ -516,6 +527,7 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
                     H5FontSize = H5FontSize,
                     H6FontSize = H6FontSize
                 },
+                Math = new MathSettings { DisplayAsImage = DisplayMathAsImage, DisplayFontSize = MathFontSize },
                 Mermaid = new MermaidSettings
                 {
                     Theme = string.IsNullOrWhiteSpace(MermaidTheme) ? "default" : MermaidTheme,

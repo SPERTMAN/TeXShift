@@ -6,13 +6,13 @@ OneNote 不支持 MathML 的 `<mspace width="...">` 元素，LaTeX 间距命令 
 
 ## 解决方案
 
-在 `MathService.ConvertMspaceToUnicode()` 中，将 `<mspace>` 元素转换为 Unicode 空格字符。
+在 `OneNoteNativeMathRenderer.Space()` 中，将 `<mspace>` 元素转换为 Unicode 空格字符。
 
 ### 映射关系
 
 | LaTeX | em 值 | Unicode 字符 |
 |-------|-------|-------------|
-| `\qquad` | ≥1.5em | `\u2003\u2003` (两个 em space) |
+| `\qquad` | 2em | `\u2003\u2003` (两个 em space) |
 | `\quad` | ≥0.8em | `\u2003` (em space) |
 | `\;` | ≥0.25em | `\u2004` (three-per-em space) |
 | `\:` | ≥0.2em | `\u205F` (medium mathematical space) |
@@ -25,4 +25,4 @@ OneNote 不支持 MathML 的 `<mspace width="...">` 元素，LaTeX 间距命令 
 
 ## 相关文件
 
-- `TeXShift.Core/Math/MathService.cs` - `ConvertMspaceToUnicode()`, `GetUnicodeSpaceForWidth()`
+- `src/TeXShift.Core/Math/OneNoteNativeMathRenderer.cs` - `Space()`

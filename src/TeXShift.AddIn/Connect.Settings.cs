@@ -6,7 +6,6 @@ using TeXShift.AddIn.Interop;
 using TeXShift.AddIn.Localization;
 using TeXShift.AddIn.UI.WPF;
 using TeXShift.Core.Localization;
-using TeXShift.Core.Mermaid;
 
 namespace TeXShift.AddIn
 {
@@ -138,57 +137,7 @@ namespace TeXShift.AddIn
         /// </summary>
         private void ApplySettingsToStyleConfig()
         {
-            if (_appSettings == null || _serviceContainer == null)
-                return;
-
-            var styleConfig = _serviceContainer.StyleConfig;
-
-            // Apply code block settings
-            var codeBlock = _appSettings.CodeBlock;
-            styleConfig.SetCodeBlockStyle(
-                codeBlock.BackgroundColor,
-                codeBlock.TextColor,
-                codeBlock.FontFamily,
-                codeBlock.FontSize,
-                codeBlock.SpaceBetween,
-                codeBlock.EnableSyntaxHighlight);
-
-            // Apply inline code settings
-            var inlineCode = _appSettings.InlineCode;
-            styleConfig.SetInlineCodeStyle(
-                inlineCode.FontFamily,
-                inlineCode.BackgroundColor);
-
-            // Apply quote block settings
-            var quoteBlock = _appSettings.QuoteBlock;
-            styleConfig.SetQuoteBlockStyle(quoteBlock.BackgroundColor);
-
-            // Apply heading settings
-            var headings = _appSettings.Headings;
-            for (int i = 1; i <= 6; i++)
-            {
-                styleConfig.SetHeadingFont(i, headings.GetFontSize(i));
-            }
-
-            // Apply Mermaid settings
-            var mermaid = _appSettings.Mermaid;
-            _serviceContainer.MermaidOptions = new MermaidRenderOptions
-            {
-                Theme = mermaid.Theme ?? "default",
-                MaxWidth = mermaid.MaxWidth > 0 ? mermaid.MaxWidth : 1920,
-                MaxHeight = mermaid.MaxHeight > 0 ? mermaid.MaxHeight : 1080
-            };
-
-            // Apply horizontal rule settings
-            var horizontalRule = _appSettings.HorizontalRule;
-            var hrMode = (horizontalRule?.UseImage ?? true)
-                ? Core.Configuration.OneNoteStyleConfig.HorizontalRuleMode.Image
-                : Core.Configuration.OneNoteStyleConfig.HorizontalRuleMode.Character;
-            styleConfig.SetHorizontalRuleStyle(hrMode, "#888888", 90, '─', 2325);
-
-            // Apply reverse conversion settings
-            var reverse = _appSettings.ReverseConversion ?? new Core.Configuration.ReverseConversionSettings();
-            styleConfig.SetReverseConversionOptions(reverse.TryRecognizeNonTeXShiftFormats);
+            _serviceContainer?.ApplySettings(_appSettings ?? new Core.Configuration.AppSettings());
         }
 
         #endregion

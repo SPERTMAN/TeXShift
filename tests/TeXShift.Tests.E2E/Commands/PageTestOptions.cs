@@ -6,6 +6,8 @@ namespace TeXShift.Tests.E2E.Commands
 
     internal sealed class PageTestOptions
     {
+        public FileInfo Settings { get; set; }
+
         public FileInfo Input { get; set; }
 
         public string Markdown { get; set; }

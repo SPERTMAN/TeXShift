@@ -60,8 +60,10 @@ namespace TeXShift.Core.OneNoteMeta
                 return string.Empty;
             }
 
-            return ComputeSemanticSignature(outline);
+            return ComputeSemanticSignature(outline, true);
         }
+
+        internal static string ComputeLegacySignature(XElement outline) => ComputeSemanticSignature(outline, false);
 
         private static readonly Regex MathMlConditionalCommentRegex = new Regex(
             "<!--\\[if\\s+mathML\\]>(.*?)<!\\[endif\\]-->",
@@ -95,7 +97,7 @@ namespace TeXShift.Core.OneNoteMeta
             "&nbsp;",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        private static string ComputeSemanticSignature(XElement outline)
+        private static string ComputeSemanticSignature(XElement outline, bool includeMathStructure)
         {
             if (outline == null)
             {
@@ -128,7 +130,7 @@ namespace TeXShift.Core.OneNoteMeta
                     return;
                 }
 
-                string token = NormalizeRichTextToToken(mergedRichText.ToString());
+                string token = NormalizeRichTextToToken(mergedRichText.ToString(), includeMathStructure);
                 mergedRichText.Clear();
                 currentTextOwner = null;
 
@@ -227,7 +229,7 @@ namespace TeXShift.Core.OneNoteMeta
             return "image:" + alt;
         }
 
-        private static string NormalizeRichTextToToken(string html)
+        private static string NormalizeRichTextToToken(string html, bool includeMathStructure)
         {
             if (string.IsNullOrEmpty(html))
             {
@@ -239,7 +241,7 @@ namespace TeXShift.Core.OneNoteMeta
             string withMathMarkers = MathMlConditionalCommentRegex.Replace(html, match =>
             {
                 string inner = match.Groups[1].Value ?? string.Empty;
-                string innerHash = HashMathMl(inner);
+                string innerHash = HashMathMl(inner, includeMathStructure);
                 return $"__MATHML_{innerHash}__";
             });
 
@@ -261,7 +263,7 @@ namespace TeXShift.Core.OneNoteMeta
             return text;
         }
 
-        private static string HashMathMl(string mathMlXml)
+        private static string HashMathMl(string mathMlXml, bool includeMathStructure)
         {
             if (string.IsNullOrWhiteSpace(mathMlXml))
             {
@@ -281,7 +283,7 @@ namespace TeXShift.Core.OneNoteMeta
                 // OneNote may rewrite some fences into <mfenced open="|" close="|"> forms (or vice versa).
                 // XElement.Value does not include mfenced open/close attributes, so we render a minimal
                 // text representation that includes mfenced fences for signature stability.
-                string rendered = RenderMathMlTextForSignature(root).Normalize(NormalizationForm.FormKC);
+                string rendered = RenderMathMlTextForSignature(root, includeMathStructure).Normalize(NormalizationForm.FormKC);
                 rendered = NormalizeMathMlRenderedText(rendered);
                 rendered = rendered.Replace("\u200B", string.Empty); // ZWSP is an internal OneNote/math artifact.
                 rendered = CollapseWhitespaceRegex.Replace(rendered, string.Empty);
@@ -295,7 +297,7 @@ namespace TeXShift.Core.OneNoteMeta
             }
         }
 
-        private static string RenderMathMlTextForSignature(XElement root)
+        private static string RenderMathMlTextForSignature(XElement root, bool includeMathStructure)
         {
             if (root == null)
             {
@@ -303,11 +305,11 @@ namespace TeXShift.Core.OneNoteMeta
             }
 
             var sb = new StringBuilder(capacity: 64);
-            AppendMathMlTextForSignature(root, sb);
+            AppendMathMlTextForSignature(root, sb, includeMathStructure);
             return sb.ToString();
         }
 
-        private static void AppendMathMlTextForSignature(XElement element, StringBuilder sb)
+        private static void AppendMathMlTextForSignature(XElement element, StringBuilder sb, bool includeMathStructure)
         {
             if (element == null)
             {
@@ -317,6 +319,32 @@ namespace TeXShift.Core.OneNoteMeta
             if (sb == null)
             {
                 throw new ArgumentNullException(nameof(sb));
+            }
+
+            if (includeMathStructure)
+            {
+                string kind = element.Name.LocalName;
+                var children = element.Elements().ToArray();
+                // N-ary limits can switch between under/over and sub/sup on import.
+                string basis = children.FirstOrDefault()?.Value;
+                if (basis != null && basis.Length == 1 && TeXShift.Core.Math.OneNoteLargeOperatorNormalizer.LargeOperators.Contains(basis))
+                {
+                    if (kind == "munder") kind = "msub";
+                    if (kind == "mover") kind = "msup";
+                    if (kind == "munderover") kind = "msubsup";
+                }
+                if (new[] { "msub", "msup", "msubsup", "mfrac", "msqrt", "mroot", "munder", "mover", "munderover", "mmultiscripts" }.Contains(kind))
+                {
+                    sb.Append('[').Append(kind).Append(':');
+                    foreach (var child in children)
+                    {
+                        AppendMathMlTextForSignature(child, sb, true);
+                        // msqrt has one inferred row, so grouping its children changes no operand boundary.
+                        if (kind != "msqrt") sb.Append('|');
+                    }
+                    sb.Append(']');
+                    return;
+                }
             }
 
             // mfenced fences are often encoded as attributes (open/close), which are not part of XElement.Value.
@@ -346,7 +374,7 @@ namespace TeXShift.Core.OneNoteMeta
                     }
                     else if (node is XElement child)
                     {
-                        AppendMathMlTextForSignature(child, sb);
+                        AppendMathMlTextForSignature(child, sb, includeMathStructure);
                     }
                 }
                 sb.Append(close);
@@ -361,7 +389,7 @@ namespace TeXShift.Core.OneNoteMeta
                 }
                 else if (node is XElement child)
                 {
-                    AppendMathMlTextForSignature(child, sb);
+                    AppendMathMlTextForSignature(child, sb, includeMathStructure);
                 }
             }
         }

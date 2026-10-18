@@ -81,6 +81,17 @@
                     <StackPanel>
                         <materialDesign:Card Padding="16" Margin="0,0,0,16">
                             <StackPanel>
+                                <TextBlock Text="{Binding MathSectionTitle}" Style="{StaticResource SectionTitle}"/>
+                                <CheckBox Content="{Binding MathImageLabel}" IsChecked="{Binding DisplayMathAsImage}"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding DisplayMathFontSizeLabel}" Style="{StaticResource SettingsLabel}"/>
+                                    <Slider Width="140" Minimum="8" Maximum="36" TickFrequency="0.5" IsSnapToTickEnabled="True" Value="{Binding MathFontSize}"/>
+                                    <TextBlock Text="{Binding MathFontSize, StringFormat={}{0:F1} pt}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </materialDesign:Card>
+                        <materialDesign:Card Padding="16" Margin="0,0,0,16">
+                            <StackPanel>
                                 <TextBlock Text="{Binding QuoteBlockSectionTitle}" Style="{StaticResource SectionTitle}"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>

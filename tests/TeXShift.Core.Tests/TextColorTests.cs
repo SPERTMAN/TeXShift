@@ -270,7 +270,7 @@ namespace TeXShift.Core.Tests
                 var converter = new MarkdownToOneNoteConverter(
                     services.StyleConfig,
                     services.MarkdownPipeline,
-                    mathService: null,
+                    mathEngine: null,
                     mermaidService: null);
                 return await converter.ConvertToOneNoteXmlAsync(markdown);
             }

@@ -6,10 +6,9 @@ using TeXShift.Core.Math;
 namespace TeXShift.Core.Tests
 {
     [TestClass]
-    public class OneNoteMathMLAdapterTests
+    public class OneNoteNativeMathRendererTests
     {
         private const string ConditionalCommentStart = "<!--[if mathML]>";
-        private const string TrailingSentinel = "<span lang='x-none'>\u200B</span>";
 
         [TestMethod]
         public void NestedSumsAndProductsDoNotGrowWithTheirOperands()
@@ -25,45 +24,8 @@ namespace TeXShift.Core.Tests
         public void IntegralImportAndExplicitStretchingRemainSupported()
         {
             string result = AdaptToOneNote("<math><mo stretchy=\"false\">∫</mo><mi>x</mi><mo stretchy=\"true\">∑</mo><mi>y</mi></math>");
-            StringAssert.Contains(result, "<mo>∫</mo>");
+            StringAssert.Contains(result, "<mo stretchy='false'>∫</mo>");
             StringAssert.Contains(result, "<mo stretchy='true'>∑</mo>");
-        }
-
-        [TestMethod]
-        [DataRow("<math><mn>2</mn></math>")]
-        [DataRow("<math><mi>x</mi><mo>+</mo><mn>1</mn></math>")]
-        public void AdaptToOneNoteWrapsNonEmptyMathMlWithoutLeadingSentinel(string mathMl)
-        {
-            var result = AdaptToOneNote(mathMl);
-
-            // A leading sentinel becomes the first plain run and makes a leading numeric token
-            // inherit the body font instead of the math font during OneNote import.
-            StringAssert.StartsWith(
-                result,
-                ConditionalCommentStart,
-                "Adapted MathML must start with the conditional comment; a leading sentinel causes OneNote's numeric-token font regression.");
-            StringAssert.EndsWith(
-                result,
-                TrailingSentinel,
-                "Adapted MathML must retain the trailing zero-width-space sentinel.");
-
-            var conditionalCommentEnd = result.IndexOf("<![endif]-->");
-            Assert.IsTrue(
-                conditionalCommentEnd > ConditionalCommentStart.Length,
-                "Adapted MathML must contain a non-empty conditional comment.");
-            StringAssert.Contains(
-                result.Substring(ConditionalCommentStart.Length, conditionalCommentEnd - ConditionalCommentStart.Length),
-                mathMl,
-                "The input MathML must remain inside the conditional comment.");
-        }
-
-        [TestMethod]
-        [DataRow(null)]
-        [DataRow("")]
-        [DataRow("   \t\r\n")]
-        public void AdaptToOneNoteReturnsEmptyForNullEmptyOrWhitespace(string mathMl)
-        {
-            Assert.AreEqual(string.Empty, AdaptToOneNote(mathMl));
         }
 
         [TestMethod]
@@ -149,14 +111,14 @@ namespace TeXShift.Core.Tests
         [DataRow("<math><munder><mi>lim</mi><mi>x</mi></munder><munder><mi>lim</mi><mi>y</mi></munder></math>")]
         public void UnrelatedOrAlreadyGroupedMathIsUnchanged(string input)
         {
-            Assert.AreEqual(input, NormalizeOperators(input));
+            AssertMathEqual(input, NormalizeOperators(input));
         }
 
         [TestMethod]
-        public void AdaptationGroupsNamespacedNumericOperatorsInsideFractionWithoutChangingSlots()
+        public void CompactFractionOperatorsRetainFixedArgumentSlots()
         {
             const string input = "<mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML'><mml:mfrac><mml:mrow><mml:mo>&#x2211;</mml:mo><mml:mo>&#x2211;</mml:mo><mml:mi>x</mml:mi></mml:mrow><mml:mi>y</mml:mi></mml:mfrac></mml:math>";
-            const string expected = "<mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML'><mml:mfrac><mml:mrow><mml:mo stretchy='false'>∑</mml:mo><mml:mrow><mml:mo stretchy='false'>∑</mml:mo><mml:mi>x</mml:mi></mml:mrow></mml:mrow><mml:mi>y</mml:mi></mml:mfrac></mml:math>";
+            const string expected = "<mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML' mathsize='11pt'><mml:mfrac><mml:mrow><mml:mo largeop='false' stretchy='false'>∑</mml:mo><mml:mo largeop='false' stretchy='false'>∑</mml:mo><mml:mi>x</mml:mi></mml:mrow><mml:mi>y</mml:mi></mml:mfrac></mml:math>";
             string adapted = AdaptToOneNote(input);
             int end = adapted.IndexOf("<![endif]-->");
             AssertMathEqual(expected, adapted.Substring(ConditionalCommentStart.Length, end - ConditionalCommentStart.Length));
@@ -179,23 +141,20 @@ namespace TeXShift.Core.Tests
 
         private static string NormalizeOperators(string mathMl)
         {
-            var type = typeof(IMathService).Assembly.GetType("TeXShift.Core.Math.OneNoteLargeOperatorNormalizer", true);
+            var type = typeof(IMathEngine).Assembly.GetType("TeXShift.Core.Math.OneNoteLargeOperatorNormalizer", true);
             var method = type.GetMethod("Normalize", BindingFlags.Static | BindingFlags.NonPublic);
             Assert.IsNotNull(method);
-            return (string)method.Invoke(null, new object[] { mathMl });
+            var math = XElement.Parse(mathMl);
+            method.Invoke(null, new object[] { math });
+            return math.ToString(SaveOptions.DisableFormatting);
         }
 
         private static string AdaptToOneNote(string mathMl)
         {
-            var adapterType = typeof(IMathService).Assembly.GetType(
-                "TeXShift.Core.Math.OneNoteMathMLAdapter",
-                throwOnError: true);
-            var method = adapterType.GetMethod(
-                "AdaptToOneNote",
-                BindingFlags.Static | BindingFlags.Public);
-
-            Assert.IsNotNull(method);
-            return (string)method.Invoke(null, new object[] { mathMl });
+            var type = typeof(IMathEngine).Assembly.GetType("TeXShift.Core.Math.OneNoteNativeMathRenderer", true);
+            var method = type.GetMethod("Render", BindingFlags.Public | BindingFlags.Static);
+            var expression = new MathExpression("", true, XElement.Parse(mathMl));
+            return ConditionalCommentStart + (string)method.Invoke(null, new object[] { expression, 11.0 }) + "<![endif]-->";
         }
     }
 }

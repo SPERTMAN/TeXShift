@@ -16,7 +16,7 @@ $ExpectedSha512 = "Bt+SSVU8eBG27zChVewOicYs7Xsdt40qm4+UpHyX7k0/O9NliPc+x77k1/FEs
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MathJaxPath = [IO.Path]::GetFullPath((Join-Path $RepoRoot "src\TeXShift.AddIn\Lib\mathjax"))
 $VersionFile = Join-Path $MathJaxPath ".texshift-version"
-$RequiredFile = Join-Path $MathJaxPath "es5\tex-mml-chtml.js"
+$RequiredFile = Join-Path $MathJaxPath "es5\tex-mml-svg.js"
 $LicenseFile = Join-Path $MathJaxPath "LICENSE"
 $ArtifactsRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot "artifacts"))
 $TempRoot = Join-Path $ArtifactsRoot ("temp\mathjax-" + [Guid]::NewGuid().ToString("N"))
@@ -63,7 +63,7 @@ try {
 
     $sourcePath = Join-Path $extractPath "package\es5"
     $sourceLicensePath = Join-Path $extractPath "package\LICENSE"
-    if (-not (Test-Path -LiteralPath (Join-Path $sourcePath "tex-mml-chtml.js") -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $sourcePath "tex-mml-svg.js") -PathType Leaf)) {
         throw "The MathJax archive does not contain the expected es5 payload."
     }
     if (-not (Test-Path -LiteralPath $sourceLicensePath -PathType Leaf)) {

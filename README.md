@@ -39,6 +39,8 @@ English | [简体中文](README.zh-CN.md)
 - **LaTeX Formulas** - Convert LaTeX math expressions to native editable OneNote equations
   - Built-in MathJax resources for fully offline operation
   - Inline (`$...$`) and display (`$$...$$`) math support
+  - Optional high-fidelity images for display equations, with LaTeX restored by reverse conversion
+  - Configurable display equation size
 
 - **Mermaid Diagrams** - Render Mermaid diagrams as embedded PNG images
   - Flowcharts, sequence diagrams, class diagrams, and more

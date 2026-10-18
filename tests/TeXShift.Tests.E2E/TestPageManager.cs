@@ -123,9 +123,9 @@ namespace TeXShift.Tests.E2E
             return xml;
         });
 
-        public Task<bool> ExportPdfAsync(string pageId, string outputPath) => _oneNoteDispatcher.InvokeAsync(app =>
+        public Task<bool> ExportPageAsync(string pageId, string outputPath, OneNoteInterop.PublishFormat format) => _oneNoteDispatcher.InvokeAsync(app =>
         {
-            app.Publish(pageId, outputPath, OneNoteInterop.PublishFormat.pfPDF, string.Empty);
+            app.Publish(pageId, outputPath, format, string.Empty);
             return File.Exists(outputPath);
         });
 

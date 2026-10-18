@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using System.Reflection;
-using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using System.Web.Script.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using TeXShift.Core.Errors;
@@ -17,8 +17,9 @@ namespace TeXShift.Core.Math
     /// Converts LaTeX math expressions to MathML using WebView2 and MathJax.
     /// Uses a dedicated STA thread to ensure WebView2 compatibility.
     /// </summary>
-    internal class MathService : IMathService
+    internal class MathJaxEngine : IMathEngine
     {
+        private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         private WebView2 _webView;
         private bool _isInitialized;
         private volatile bool _isDisposed;
@@ -29,17 +30,7 @@ namespace TeXShift.Core.Math
         private StaWorker _worker;
         private string _userDataFolder;
 
-        // Regex to add mml: namespace prefix to MathML elements
-        private static readonly Regex MathMLElementRegex = new Regex(
-            @"<(/?)(math|mi|mo|mn|ms|mtext|mspace|mglyph|maligngroup|malignmark|" +
-            @"mrow|mfrac|msqrt|mroot|mstyle|merror|mpadded|mphantom|mfenced|menclose|" +
-            @"msub|msup|msubsup|munder|mover|munderover|mmultiscripts|mtable|mlabeledtr|" +
-            @"mtr|mtd|maction|semantics|annotation|annotation-xml)(\s|>|/>)",
-            RegexOptions.Compiled);
-
-        public bool IsInitialized => _isInitialized;
-
-        public async Task InitializeAsync()
+        private async Task InitializeAsync()
         {
             if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
             if (_isInitialized) return;
@@ -122,9 +113,9 @@ namespace TeXShift.Core.Math
             }
 
             // Generate loader HTML with file:// URL to MathJax
-            var mathjaxFileUrl = "file:///" + Path.Combine(mathjaxPath, "es5", "tex-mml-chtml.js").Replace('\\', '/');
+            var mathjaxFileUrl = "file:///" + Path.Combine(mathjaxPath, "es5", "tex-mml-svg.js").Replace('\\', '/');
             var html = GetMathJaxLoaderHtml().Replace(
-                "https://mathjax.local/es5/tex-mml-chtml.js",
+                "https://mathjax.local/es5/tex-mml-svg.js",
                 mathjaxFileUrl);
 
             // Write loader HTML to temp folder and navigate via file://
@@ -149,62 +140,59 @@ namespace TeXShift.Core.Math
             await WaitForMathJaxReady();
         }
 
-        public async Task<string> LatexToMathMLAsync(string latex, bool displayMode)
+        public async Task<MathExpression> ParseAsync(string latex, bool displayMode)
         {
-            if (!_isInitialized)
-            {
-                throw new MathConversionException(
-                    Resources.GetString("Error_MathInitFailed"),
-                    "MathService not initialized. Call InitializeAsync first.");
-            }
+            var xml = await InvokeAsync<string>("parse", new { latex, displayMode }).ConfigureAwait(false);
+            var mathml = XElement.Parse(xml);
+            var error = System.Linq.Enumerable.FirstOrDefault(mathml.Descendants(mathml.Name.Namespace + "merror"));
+            if (error != null)
+                throw new MathConversionException(Resources.GetString("Error_MathConversionFailed"), error.Value);
+            return new MathExpression(latex, displayMode, mathml);
+        }
 
-            if (string.IsNullOrWhiteSpace(latex))
-            {
-                return string.Empty;
-            }
+        public Task<MathImage> RenderImageAsync(MathExpression expression, double fontSizePt) =>
+            InvokeAsync<MathImage>("image", new { mathml = expression.CopyMathML().ToString(SaveOptions.DisableFormatting), fontSizePt });
 
+        private async Task<T> InvokeAsync<T>(string operation, object arguments)
+        {
+            await InitializeAsync().ConfigureAwait(false);
             try
             {
-                // Execute on STA thread
-                if (_isDisposed) throw new ObjectDisposedException(GetType().Name);
-                return await _worker.InvokeAsync(() => ConvertLatexAsync(latex, displayMode)).ConfigureAwait(false);
+                return await _worker.InvokeAsync(async () =>
+                {
+                    var completion = new TaskCompletionSource<T>();
+                    var id = Guid.NewGuid().ToString("N");
+                    void Receive(object sender, CoreWebView2WebMessageReceivedEventArgs args)
+                    {
+                        var message = _json.Deserialize<MathResponse>(args.WebMessageAsJson);
+                        if (message.Id != id) return;
+                        if (message.Error != null) completion.TrySetException(new MathConversionException(
+                            Resources.GetString("Error_MathConversionFailed"), message.Error));
+                        else completion.TrySetResult(_json.ConvertToType<T>(message.Result));
+                    }
+                    _webView.CoreWebView2.WebMessageReceived += Receive;
+                    try
+                    {
+                        var request = _json.Serialize(new { id, operation, arguments });
+                        await _webView.CoreWebView2.ExecuteScriptAsync($"executeMathRequest({request})");
+                        if (await Task.WhenAny(completion.Task, Task.Delay(30000)) != completion.Task)
+                            throw new TimeoutException("MathJax request timed out.");
+                        return await completion.Task;
+                    }
+                    finally { _webView.CoreWebView2.WebMessageReceived -= Receive; }
+                }).ConfigureAwait(false);
             }
             catch (Exception ex) when (!(ex is TeXShiftException))
             {
-                throw new MathConversionException(
-                    Resources.GetString("Error_MathConversionFailed"),
-                    ex.Message,
-                    ex);
+                throw new MathConversionException(Resources.GetString("Error_MathConversionFailed"), ex.Message, ex);
             }
         }
 
-        private async Task<string> ConvertLatexAsync(string latex, bool displayMode)
+        private sealed class MathResponse
         {
-            // Escape LaTeX for JavaScript string
-            var escapedLatex = EscapeForJavaScript(latex);
-            var displayArg = displayMode ? "true" : "false";
-
-            // Call MathJax.tex2mml() via WebView2
-            var script = $"texToMml('{escapedLatex}', {displayArg})";
-            var result = await _webView.CoreWebView2.ExecuteScriptAsync(script).ConfigureAwait(false);
-
-            // Result is a JSON-encoded string, remove quotes
-            var mathml = UnescapeJsonString(result);
-
-            // Add mml: namespace prefix for OneNote compatibility
-            mathml = AddMmlNamespacePrefix(mathml);
-
-            return mathml;
-        }
-
-        public string WrapMathMLForOneNote(string mathml)
-        {
-            if (string.IsNullOrWhiteSpace(mathml))
-            {
-                return string.Empty;
-            }
-
-            return OneNoteMathMLAdapter.AdaptToOneNote(mathml);
+            public string Id { get; set; }
+            public string Error { get; set; }
+            public object Result { get; set; }
         }
 
         /// <summary>
@@ -286,45 +274,6 @@ namespace TeXShift.Core.Math
             throw new TimeoutException("MathJax failed to initialize within timeout period.");
         }
 
-        private string AddMmlNamespacePrefix(string mathml)
-        {
-            // Add mml: prefix to all MathML elements
-            var result = MathMLElementRegex.Replace(mathml, "<$1mml:$2$3");
-
-            // Update xmlns to use mml: prefix
-            result = result.Replace(
-                "xmlns=\"http://www.w3.org/1998/Math/MathML\"",
-                "xmlns:mml=\"http://www.w3.org/1998/Math/MathML\"");
-
-            return result;
-        }
-
-        private string EscapeForJavaScript(string input)
-        {
-            return input
-                .Replace("\\", "\\\\")
-                .Replace("'", "\\'")
-                .Replace("\n", "\\n")
-                .Replace("\r", "\\r")
-                .Replace("\t", "\\t");
-        }
-
-        private string UnescapeJsonString(string json)
-        {
-            if (string.IsNullOrEmpty(json) || json == "null")
-            {
-                return string.Empty;
-            }
-
-            // Remove surrounding quotes
-            if (json.StartsWith("\"") && json.EndsWith("\""))
-            {
-                json = json.Substring(1, json.Length - 2);
-            }
-
-            // Unescape JSON string
-            return Regex.Unescape(json);
-        }
 
         public void Dispose()
         {

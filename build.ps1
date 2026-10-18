@@ -191,7 +191,7 @@ function Test-StagedPayload {
         "zh-CN\TeXShift.AddIn.resources.dll",
         "zh-CN\TeXShift.Core.resources.dll",
         "Lib\mathjax\LICENSE",
-        "Lib\mathjax\es5\tex-mml-chtml.js",
+        "Lib\mathjax\es5\tex-mml-svg.js",
         "Lib\mermaid\mermaid.min.js"
     )
 

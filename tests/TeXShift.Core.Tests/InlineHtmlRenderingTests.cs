@@ -152,24 +152,24 @@ namespace TeXShift.Core.Tests
         }
 
         [TestMethod]
-        public async Task BrInsideMathIsPassedToMathServiceUnchanged()
+        public async Task BrInsideMathIsPassedToMathEngineUnchanged()
         {
-            var mathService = new RecordingMathService();
+            var mathEngine = new RecordingMathEngine();
             var markdown = "Inline $a<br>b$.\n\n$$\nc<br>d\n$$";
 
-            await ConvertAsync(markdown, mathService: mathService);
+            await ConvertAsync(markdown, mathEngine: mathEngine);
 
-            Assert.AreEqual(2, mathService.Calls.Count);
-            Assert.AreEqual("a<br>b", mathService.Calls[0].Latex);
-            Assert.IsFalse(mathService.Calls[0].DisplayMode);
-            Assert.AreEqual("c<br>d", mathService.Calls[1].Latex);
-            Assert.IsTrue(mathService.Calls[1].DisplayMode);
+            Assert.AreEqual(2, mathEngine.Calls.Count);
+            Assert.AreEqual("a<br>b", mathEngine.Calls[0].Latex);
+            Assert.IsFalse(mathEngine.Calls[0].DisplayMode);
+            Assert.AreEqual("c<br>d", mathEngine.Calls[1].Latex);
+            Assert.IsTrue(mathEngine.Calls[1].DisplayMode);
         }
 
         [TestMethod]
-        public async Task BrInsideTableMathIsPassedToMathServiceUnchanged()
+        public async Task BrInsideTableMathIsPassedToMathEngineUnchanged()
         {
-            var mathService = new RecordingMathService();
+            var mathEngine = new RecordingMathEngine();
             var markdown = string.Join("\n", new[]
             {
                 "| Text | Formula |",
@@ -177,11 +177,11 @@ namespace TeXShift.Core.Tests
                 "| a<br>b | $c<br>d$ |"
             });
 
-            var outline = await ConvertAsync(markdown, mathService: mathService);
+            var outline = await ConvertAsync(markdown, mathEngine: mathEngine);
 
             Assert.IsTrue(GetTextValues(outline).Any(value => value == "a\nb"));
-            Assert.AreEqual(1, mathService.Calls.Count);
-            Assert.AreEqual("c<br>d", mathService.Calls[0].Latex);
+            Assert.AreEqual(1, mathEngine.Calls.Count);
+            Assert.AreEqual("c<br>d", mathEngine.Calls[0].Latex);
         }
 
         [TestMethod]
@@ -198,7 +198,7 @@ namespace TeXShift.Core.Tests
 
         private static async Task<XElement> ConvertAsync(
             string markdown,
-            IMathService mathService = null,
+            IMathEngine mathEngine = null,
             IMermaidService mermaidService = null)
         {
             using (var services = new ServiceContainer())
@@ -206,7 +206,7 @@ namespace TeXShift.Core.Tests
                 var converter = new MarkdownToOneNoteConverter(
                     services.StyleConfig,
                     services.MarkdownPipeline,
-                    mathService,
+                    mathEngine,
                     mermaidService);
                 return await converter.ConvertToOneNoteXmlAsync(markdown);
             }
@@ -226,26 +226,15 @@ namespace TeXShift.Core.Tests
             return WebUtility.HtmlDecode(withoutTags).Trim('\u00A0');
         }
 
-        private sealed class RecordingMathService : IMathService
+        private sealed class RecordingMathEngine : IMathEngine
         {
-            public bool IsInitialized => true;
             public List<MathCall> Calls { get; } = new List<MathCall>();
-
-            public Task InitializeAsync()
-            {
-                return Task.CompletedTask;
-            }
-
-            public Task<string> LatexToMathMLAsync(string latex, bool displayMode)
+            public Task<MathExpression> ParseAsync(string latex, bool displayMode)
             {
                 Calls.Add(new MathCall { Latex = latex, DisplayMode = displayMode });
-                return Task.FromResult("<math />");
+                return Task.FromResult(new MathExpression(latex, displayMode, XElement.Parse("<math />")));
             }
-
-            public string WrapMathMLForOneNote(string mathml)
-            {
-                return mathml;
-            }
+            public Task<MathImage> RenderImageAsync(MathExpression expression, double fontSizePt) => throw new System.NotSupportedException();
 
             public void Dispose()
             {

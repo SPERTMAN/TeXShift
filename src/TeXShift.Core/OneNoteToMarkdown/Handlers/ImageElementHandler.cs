@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Xml.Linq;
 using TeXShift.Core.OneNoteToMarkdown.Abstractions;
@@ -28,6 +28,12 @@ namespace TeXShift.Core.OneNoteToMarkdown.Handlers
             var image = element?.Element(ns + "Image");
             if (image == null)
             {
+                yield break;
+            }
+
+            if (TeXShift.Core.Math.MathImageSource.TryDecode((string)image.Attribute("alt"), out string latex))
+            {
+                yield return "$$\n" + latex + "\n$$";
                 yield break;
             }
 
