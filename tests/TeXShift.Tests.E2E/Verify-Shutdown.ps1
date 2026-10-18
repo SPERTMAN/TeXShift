@@ -54,3 +54,19 @@ foreach ($name in @('math_inline', 'mermaid_simple')) {
     Assert-Exited
     Write-Output "$name lifecycle: PASS"
 }
+
+$emptyInput = Join-Path $output 'empty.md'
+$errorOutput = Join-Path $output 'error-dialog'
+New-Item -ItemType Directory -Path $errorOutput -Force | Out-Null
+[IO.File]::WriteAllText($emptyInput, '')
+try {
+    $json = & $runner convert --input $emptyInput --output $errorOutput 2> (Join-Path $errorOutput 'stderr.txt')
+    $code = $LASTEXITCODE
+    $result = ($json -join "`n") | ConvertFrom-Json
+    if ($code -ne 1 -or $result.cleanupStatus -ne 'passed' -or -not $result.files.errorDialog) {
+        throw 'Expected a captured and dismissed conversion error with successful cleanup.'
+    }
+    Assert-Exited
+    Write-Output 'Error dialog lifecycle: PASS'
+}
+finally { Remove-Item -LiteralPath $emptyInput }

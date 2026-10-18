@@ -17,7 +17,7 @@ namespace TeXShift.Tests.E2E.Commands
 
         public string[] Select { get; set; }
 
-        public string Mode { get; set; } = "com";
+        public string Operation { get; set; } = "convert";
 
         public DirectoryInfo Output { get; set; }
 

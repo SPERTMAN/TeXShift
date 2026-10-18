@@ -23,7 +23,7 @@ namespace TeXShift.Tests.E2E
         private const string TestSectionName = "E2E";
         private const string OneNoteAppPathRegistryKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\onenote.exe";
         private const string DefaultOneNoteExecutablePath = @"C:\Program Files\Microsoft Office\root\Office16\ONENOTE.EXE";
-        private const int SwRestore = 9;
+        private const int SwShowNoActivate = 4;
         private const int OneNoteStartupWindowTimeoutMs = 10000;
         private const int OneNoteStartupWindowPollIntervalMs = 200;
         private const int OneNoteComReadyTimeoutMs = 10000;
@@ -31,15 +31,8 @@ namespace TeXShift.Tests.E2E
         private const int OneNoteCloseTimeoutMs = 8000;
         private const uint WmSysCommand = 0x0112;
         private const int ScClose = 0xF060;
-        private const int OneNoteActivateTimeoutMs = 3000;
-        private const int OneNoteActivateRetryIntervalMs = 200;
-        private const uint WmKeyDown = 0x0100;
-        private const uint WmKeyUp = 0x0101;
         private const int VkEnd = 0x23;
         private const int VkDown = 0x28;
-        private const int VkShift = 0x10;
-        private const int VkLShift = 0xA0;
-        private const byte KeyDownState = 0x80;
         private const int MaxSelectionKeySteps = 200;
         private const int SelectionKeyTimeoutMs = 1000;
         private const int SelectionPollIntervalMs = 50;
@@ -59,31 +52,7 @@ namespace TeXShift.Tests.E2E
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
         [DllImport("user32.dll")]
-        private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
-
-        [DllImport("user32.dll")]
-        private static extern uint MapVirtualKey(uint code, uint mapType);
-
-        [DllImport("user32.dll")]
         private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern bool AttachThreadInput(uint attachThreadId, uint attachToThreadId, bool attach);
-
-        [DllImport("kernel32.dll")]
-        private static extern uint GetCurrentThreadId();
-
-        [DllImport("user32.dll")]
-        private static extern bool GetKeyboardState(byte[] keyState);
-
-        [DllImport("user32.dll")]
-        private static extern bool SetKeyboardState(byte[] keyState);
 
         private static bool IsBoolAttributeTrue(XElement element, string attributeName)
         {
@@ -126,13 +95,12 @@ namespace TeXShift.Tests.E2E
                 // and deleting E2E pages in that state can leave its saved page pointer dangling.
                 LaunchOneNoteWithWindowIfNeeded();
 
-                if (_launchedOneNoteProcess)
-                {
-                    // Wait before COM activation so it attaches to the WMI-launched window instead
-                    // of racing ahead and starting a headless -Embedding instance.
-                    WaitForOneNoteMainWindow();
-                }
+                // Existing processes may still be opening their window. Wait before COM activation
+                // so it attaches to a notebook window rather than a headless -Embedding instance.
+                WaitForOneNoteMainWindow();
 
+                var window = GetOneNoteMainWindowHandleOrThrow();
+                if (IsIconic(window)) ShowWindow(window, SwShowNoActivate);
                 _oneNoteDispatcher = OneNoteComDispatcher.Connect();
             }
             catch
@@ -146,6 +114,20 @@ namespace TeXShift.Tests.E2E
         {
             return Task.Run(() => new TestPageManager());
         }
+
+        public IntPtr MainWindowHandle => GetOneNoteMainWindowHandleOrThrow();
+
+        public Task<string> GetPageSelectionXmlAsync(string pageId) => _oneNoteDispatcher.InvokeAsync(app =>
+        {
+            app.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
+            return xml;
+        });
+
+        public Task<bool> ExportPdfAsync(string pageId, string outputPath) => _oneNoteDispatcher.InvokeAsync(app =>
+        {
+            app.Publish(pageId, outputPath, OneNoteInterop.PublishFormat.pfPDF, string.Empty);
+            return File.Exists(outputPath);
+        });
 
         public OneNoteComDispatcher OneNoteDispatcher => _oneNoteDispatcher;
 
@@ -591,53 +573,6 @@ namespace TeXShift.Tests.E2E
             return IntPtr.Zero;
         }
 
-        /// <summary>
-        /// Makes OneNote the active window, as when a user clicks a ribbon button, and returns the
-        /// window that had the foreground so it can be given back with <see cref="FocusWindow"/>.
-        /// </summary>
-        public static IntPtr ActivateOneNoteWindow()
-        {
-            IntPtr window = GetOneNoteMainWindowHandleOrThrow();
-            if (IsIconic(window))
-            {
-                ShowWindow(window, SwRestore);
-            }
-
-            IntPtr previous = GetForegroundWindow();
-            var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteActivateTimeoutMs);
-            while (GetForegroundWindow() != window)
-            {
-                if (DateTime.UtcNow >= deadline)
-                {
-                    throw new InvalidOperationException("Could not bring OneNote to the foreground.");
-                }
-
-                FocusWindow(window);
-                Thread.Sleep(OneNoteActivateRetryIntervalMs);
-            }
-
-            return previous;
-        }
-
-        public static void FocusWindow(IntPtr window)
-        {
-            // Windows lets only the foreground thread hand over activation, so share its input state.
-            uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
-            uint currentThread = GetCurrentThreadId();
-            bool attached = foregroundThread != currentThread && AttachThreadInput(currentThread, foregroundThread, true);
-            try
-            {
-                SetForegroundWindow(window);
-            }
-            finally
-            {
-                if (attached)
-                {
-                    AttachThreadInput(currentThread, foregroundThread, false);
-                }
-            }
-        }
-
         private void CloseOneNoteProcess()
         {
             if (_ownedOneNoteProcess != null) CloseOneNoteProcess(_ownedOneNoteProcess);
@@ -872,7 +807,7 @@ namespace TeXShift.Tests.E2E
             if (!selection.IsRange)
             {
                 // End collapses it to a caret, which OneNote reports as an empty selected T.
-                PressKeyInOneNote(VkEnd);
+                OneNoteEditorInput.PressKey(MainWindowHandle, VkEnd);
                 WaitForSelection(app, pageId, page => FindById(page, firstId)?.Elements(OneNoteNamespace + "T")
                     .Any(text => (string)text.Attribute("selected") == "all" && text.Value.Length == 0) == true);
                 return;
@@ -895,7 +830,7 @@ namespace TeXShift.Tests.E2E
         /// </summary>
         private void ExtendSelectionTo(OneNoteInterop.Application app, string pageId, string lastOeId)
         {
-            HoldShiftInOneNote(() =>
+            OneNoteEditorInput.HoldShift(MainWindowHandle, () =>
             {
                 string signature = ReadSelection(app, pageId, lastOeId, out string lastState);
                 int lastKey = 0;
@@ -907,7 +842,7 @@ namespace TeXShift.Tests.E2E
                     }
 
                     lastKey = lastState == null || lastKey == VkEnd ? VkDown : VkEnd;
-                    PressKeyInOneNote(lastKey);
+                    OneNoteEditorInput.PressKey(MainWindowHandle, lastKey);
 
                     // End at a line end changes nothing, so an unchanged selection after the wait is expected.
                     var deadline = DateTime.UtcNow.AddMilliseconds(SelectionKeyTimeoutMs);
@@ -974,65 +909,6 @@ namespace TeXShift.Tests.E2E
 
             // Timeout reached - fail fast to avoid flaky follow-up steps
             throw new TimeoutException("WaitForSelection: Timeout waiting for the page selection.");
-        }
-
-        /// <summary>
-        /// Posts a key press to the window holding OneNote's keyboard focus, leaving the user's
-        /// foreground window untouched.
-        /// </summary>
-        private static void PressKeyInOneNote(int virtualKey)
-        {
-            IntPtr mainWindow = GetOneNoteMainWindowHandleOrThrow();
-            var info = new GuiThreadInfo { cbSize = Marshal.SizeOf<GuiThreadInfo>() };
-            uint threadId = GetWindowThreadProcessId(mainWindow, out _);
-            IntPtr target = GetGUIThreadInfo(threadId, ref info) && info.hwndFocus != IntPtr.Zero
-                ? info.hwndFocus
-                : mainWindow;
-
-            // lParam: repeat count 1 and scan code; key-up also sets the previous-state and transition bits.
-            int keyData = 1 | ((int)MapVirtualKey((uint)virtualKey, 0) << 16);
-            PostMessage(target, WmKeyDown, (IntPtr)virtualKey, (IntPtr)keyData);
-            PostMessage(target, WmKeyUp, (IntPtr)virtualKey, (IntPtr)(keyData | unchecked((int)0xC0000000)));
-        }
-
-        /// <summary>
-        /// Runs <paramref name="action"/> with Shift down for OneNote. Posted keys carry no modifier state,
-        /// so Shift is set in the keyboard state shared with OneNote's input thread.
-        /// </summary>
-        private static void HoldShiftInOneNote(Action action)
-        {
-            uint oneNoteThread = GetWindowThreadProcessId(GetOneNoteMainWindowHandleOrThrow(), out _);
-            uint currentThread = GetCurrentThreadId();
-            if (!AttachThreadInput(currentThread, oneNoteThread, true))
-            {
-                throw new InvalidOperationException("Could not share keyboard state with OneNote.");
-            }
-
-            try
-            {
-                var state = new byte[256];
-                GetKeyboardState(state);
-                byte shift = state[VkShift];
-                byte leftShift = state[VkLShift];
-                state[VkShift] = KeyDownState;
-                state[VkLShift] = KeyDownState;
-                SetKeyboardState(state);
-
-                try
-                {
-                    action();
-                }
-                finally
-                {
-                    state[VkShift] = shift;
-                    state[VkLShift] = leftShift;
-                    SetKeyboardState(state);
-                }
-            }
-            finally
-            {
-                AttachThreadInput(currentThread, oneNoteThread, false);
-            }
         }
 
         private static IntPtr GetOneNoteMainWindowHandleOrThrow()
@@ -1188,21 +1064,5 @@ namespace TeXShift.Tests.E2E
             finally { _ownedOneNoteProcess?.Dispose(); }
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct GuiThreadInfo
-        {
-            public int cbSize;
-            public int flags;
-            public IntPtr hwndActive;
-            public IntPtr hwndFocus;
-            public IntPtr hwndCapture;
-            public IntPtr hwndMenuOwner;
-            public IntPtr hwndMoveSize;
-            public IntPtr hwndCaret;
-            public int caretLeft;
-            public int caretTop;
-            public int caretRight;
-            public int caretBottom;
-        }
     }
 }

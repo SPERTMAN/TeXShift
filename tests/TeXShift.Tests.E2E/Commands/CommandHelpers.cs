@@ -75,6 +75,9 @@ namespace TeXShift.Tests.E2E.Commands
                 FinalXml = FindNewestFile(output, "F04_Final_Page_XML_Basic_*.xml", startUtc),
                 FinalXmlFull = FindNewestFile(output, "F04_Final_Page_XML_Full_*.xml", startUtc),
                 Perf = FindNewestFile(output, "F06_Perf_*.txt", startUtc),
+                RibbonCommand = FindNewestFile(output, "F09_Ribbon_Command.xml", startUtc),
+                UiSnapshot = FindNewestFile(output, "F10_UI.xml", startUtc),
+                ErrorDialog = FindNewestFile(output, "F11_Error_Dialog.txt", startUtc),
                 Pdf = !string.IsNullOrWhiteSpace(pdfPath)
                     ? Path.GetFileName(pdfPath)
                     : FindNewestFile(output, "F05_Export_*.pdf", startUtc)

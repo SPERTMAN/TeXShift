@@ -12,16 +12,14 @@ namespace TeXShift.Tests.E2E.Models
         private readonly Stopwatch _timer = Stopwatch.StartNew();
         private bool _cleanupFailed;
 
-        public E2ERunReport(string mode, string testName, bool cleanupRequested)
+        public E2ERunReport(string testName, bool cleanupRequested)
         {
-            Mode = mode;
             TestName = testName;
             CleanupRequested = cleanupRequested;
         }
 
         public DateTime StartedUtc { get; } = DateTime.UtcNow;
         public DateTime FinishedUtc { get; private set; }
-        public string Mode { get; }
         public string Operation { get; set; } = "convert";
         public string TestName { get; }
         public string StartMode { get; set; } = "unavailable";

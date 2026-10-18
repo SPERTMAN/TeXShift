@@ -1,6 +1,7 @@
 using System;
 using System.CommandLine;
 using System.IO;
+using System.Threading;
 using TeXShift.Tests.E2E.Commands;
 
 namespace TeXShift.Tests.E2E
@@ -13,15 +14,29 @@ namespace TeXShift.Tests.E2E
             var rootCommand = new RootCommand("TeXShift E2E Test Runner");
 
             rootCommand.Subcommands.Add(CreatePageTestCommand());
+            rootCommand.Subcommands.Add(CreatePageTestCommand(reverse: true));
             rootCommand.Subcommands.Add(CreatePageTestCommand(replayWrite: true));
             rootCommand.Subcommands.Add(CreateReverseXmlCommand());
             rootCommand.Subcommands.Add(CreateDumpCommand());
             rootCommand.Subcommands.Add(CreateVerifyRestoreCommand());
 
-            return rootCommand.Parse(args).Invoke();
+            // OneNote selection is shared desktop state; concurrent runners cannot isolate it.
+            using (var mutex = new Mutex(false, @"Local\TeXShift.E2E"))
+            {
+                bool acquired;
+                try { acquired = mutex.WaitOne(0); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired)
+                {
+                    Console.Error.WriteLine("Another TeXShift E2E runner is using OneNote.");
+                    return CommandHelpers.ExitInvalidArguments;
+                }
+                try { return rootCommand.Parse(args).Invoke(); }
+                finally { mutex.ReleaseMutex(); }
+            }
         }
 
-        private static Command CreatePageTestCommand(bool replayWrite = false)
+        private static Command CreatePageTestCommand(bool replayWrite = false, bool reverse = false)
         {
             var inputOption = new Option<FileInfo>("--input", "-i")
             {
@@ -50,12 +65,6 @@ namespace TeXShift.Tests.E2E
                 AllowMultipleArgumentsPerToken = true
             };
 
-            var modeOption = new Option<string>("--mode")
-            {
-                Description = "Run mode: com (default) or ui (activate OneNote before converting)",
-                DefaultValueFactory = _ => "com"
-            };
-
             var outlineOption = new Option<string>("--outline")
             {
                 Description = "Select the whole text box containing this paragraph text"
@@ -80,7 +89,7 @@ namespace TeXShift.Tests.E2E
             };
             var command = replayWrite
                 ? new Command("write-xml", "Replay an XML update against a disposable test page")
-                : new Command("convert", "Convert markdown and export results");
+                : new Command(reverse ? "reverse" : "convert", "Invoke the installed TeXShift Ribbon command and export the resulting page");
             if (replayWrite) command.Options.Add(changesOption);
             command.Options.Add(inputOption);
             command.Options.Add(markdownOption);
@@ -88,7 +97,6 @@ namespace TeXShift.Tests.E2E
             command.Options.Add(caretOption);
             command.Options.Add(outlineOption);
             command.Options.Add(selectOption);
-            command.Options.Add(modeOption);
             command.Options.Add(outputOption);
             command.Options.Add(cleanupOption);
 
@@ -96,6 +104,7 @@ namespace TeXShift.Tests.E2E
             {
                 var options = new PageTestOptions
                 {
+                    Operation = reverse ? "reverse" : "convert",
                     Input = parseResult.GetValue(inputOption),
                     Markdown = parseResult.GetValue(markdownOption),
                     Page = parseResult.GetValue(pageOption),
@@ -103,7 +112,6 @@ namespace TeXShift.Tests.E2E
                     Caret = parseResult.GetValue(caretOption),
                     Outline = parseResult.GetValue(outlineOption),
                     Select = parseResult.GetValue(selectOption),
-                    Mode = parseResult.GetValue(modeOption),
                     Output = parseResult.GetValue(outputOption),
                     Cleanup = parseResult.GetValue(cleanupOption)
                 };

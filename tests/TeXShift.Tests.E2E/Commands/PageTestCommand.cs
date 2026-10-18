@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using TeXShift.Core.Services;
 using TeXShift.Tests.E2E.Models;
 
 namespace TeXShift.Tests.E2E.Commands
@@ -29,14 +28,6 @@ namespace TeXShift.Tests.E2E.Commands
             if (sourceCount == 0)
             {
                 return CommandHelpers.EmitArgumentError("请提供 --input、--markdown 或 --page。", null, output, 0);
-            }
-
-            string mode = string.IsNullOrWhiteSpace(options.Mode)
-                ? "com"
-                : options.Mode.Trim().ToLowerInvariant();
-            if (mode != "com" && mode != "ui")
-            {
-                return CommandHelpers.EmitArgumentError("--mode 只能是 com 或 ui。", null, output, 0);
             }
 
             bool hasCaret = !string.IsNullOrEmpty(options.Caret);
@@ -91,13 +82,12 @@ namespace TeXShift.Tests.E2E.Commands
                 output.Create();
             }
 
-            var run = new E2ERunReport(mode, testName, options.Cleanup);
-            run.Operation = changesTemplate == null ? "convert" : "write-xml";
-            var cliResult = new CliResult { Mode = mode, TestName = testName, OutputDirectory = output.FullName };
+            var run = new E2ERunReport(testName, options.Cleanup);
+            run.Operation = changesTemplate == null ? options.Operation : "write-xml";
+            var cliResult = new CliResult { Operation = run.Operation, TestName = testName, OutputDirectory = output.FullName };
             int exitCode = CommandHelpers.ExitSuccess;
             TestPageManager pageManager = null;
-            ServiceContainer serviceContainer = null;
-            IntPtr previousForegroundWindow = IntPtr.Zero;
+            RibbonDriver ribbon = null;
             string pdfPath = null;
 
             try
@@ -107,22 +97,14 @@ namespace TeXShift.Tests.E2E.Commands
                     pageManager = await TestPageManager.CreateAsync().ConfigureAwait(false);
                     run.StartMode = pageManager.LaunchedOneNoteProcess ? "launched" : "attached";
                     run.OneNotePid = pageManager.OneNoteProcessId;
+                    if (changesTemplate == null) ribbon = new RibbonDriver(pageManager.MainWindowHandle);
                 }).ConfigureAwait(false);
-                serviceContainer = new ServiceContainer();
 
                 await run.StepAsync("SaveCurrentPage", async () =>
                 {
                     await pageManager.SaveCurrentPageAsync().ConfigureAwait(false);
                     run.OriginalPageId = pageManager.OriginalPageId;
                 }).ConfigureAwait(false);
-
-                // Foreground mode includes page preparation and selection, not just conversion.
-                if (mode == "ui")
-                    await run.StepAsync("ActivateOneNote", () =>
-                    {
-                        previousForegroundWindow = TestPageManager.ActivateOneNoteWindow();
-                        return Task.CompletedTask;
-                    }).ConfigureAwait(false);
 
                 await run.StepAsync("CreateTestPage", async () =>
                 {
@@ -136,22 +118,37 @@ namespace TeXShift.Tests.E2E.Commands
                     await run.StepAsync("WriteXml", () => XmlWriteReplay.ExecuteAsync(
                         pageManager, run.PageId, changesTemplate, output.FullName)).ConfigureAwait(false);
                 }
-                else await run.StepAsync("Convert", async () =>
+                else
                 {
-                    var orchestrator = serviceContainer.CreateConversionOrchestrator(pageManager.OneNoteDispatcher);
-                    var result = await orchestrator.ExecuteAsync(new ConversionOptions
+                    var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                    await run.StepAsync("CaptureInput", async () =>
                     {
-                        WriteDebugFiles = true,
-                        ExportPdf = true,
-                        OutputDirectory = output.FullName
+                        File.WriteAllText(Path.Combine(output.FullName, $"F02_Original_XML_{stamp}.xml"),
+                            await pageManager.GetPageSelectionXmlAsync(run.PageId).ConfigureAwait(false));
+                        if (markdownContent != null)
+                            File.WriteAllText(Path.Combine(output.FullName, $"F01_Input_Markdown_{stamp}.md"), markdownContent);
                     }).ConfigureAwait(false);
-                    pdfPath = result?.PdfPath;
-                    if (result == null || !result.Success)
+                    await run.StepAsync("PrepareRibbon", () => Task.Run(() =>
+                        ribbon.Prepare(options.Operation))).ConfigureAwait(false);
+                    await run.StepAsync("InvokeRibbon", () => ribbon.InvokeAsync(options.Operation, run.PageId, output.FullName)).ConfigureAwait(false);
+                    await run.StepAsync("CaptureResult", async () =>
                     {
-                        exitCode = IsPdfExportFailure(result) ? CommandHelpers.ExitPdfFailed : CommandHelpers.ExitConversionFailed;
-                        throw result?.Error ?? new InvalidOperationException(result?.ReadResult?.ErrorMessage ?? "转换失败。");
-                    }
-                }).ConfigureAwait(false);
+                        File.WriteAllText(Path.Combine(output.FullName, $"F04_Final_Page_XML_Basic_{stamp}.xml"),
+                            await pageManager.GetPageContentBasicXmlAsync(run.PageId).ConfigureAwait(false));
+                        File.WriteAllText(Path.Combine(output.FullName, $"F08_Final_Selection_{stamp}.xml"),
+                            await pageManager.GetPageSelectionXmlAsync(run.PageId).ConfigureAwait(false));
+                    }).ConfigureAwait(false);
+                    await run.StepAsync("ExportPdf", async () =>
+                    {
+                        pdfPath = Path.Combine(output.FullName, $"F05_Export_{stamp}.pdf");
+                        try
+                        {
+                            if (!await pageManager.ExportPdfAsync(run.PageId, pdfPath).ConfigureAwait(false))
+                                throw new IOException("PDF export failed.");
+                        }
+                        catch { exitCode = CommandHelpers.ExitPdfFailed; throw; }
+                    }).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
@@ -159,10 +156,17 @@ namespace TeXShift.Tests.E2E.Commands
                     exitCode = ex is COMException ? CommandHelpers.ExitOneNoteUnavailable : CommandHelpers.ExitConversionFailed;
                 cliResult.Error = ex.Message;
                 CommandHelpers.EmitError("E2E 执行失败。", ex);
+                if (pageManager?.TestPageId != null && ribbon?.CommandPending != true)
+                    await run.CleanupAsync("CaptureFailureSelection", async () =>
+                        File.WriteAllText(Path.Combine(output.FullName, "F08_Failed_Selection.xml"),
+                            await pageManager.GetPageSelectionXmlAsync(pageManager.TestPageId).ConfigureAwait(false))).ConfigureAwait(false);
+                if (ribbon != null && !ribbon.CommandPending)
+                    await run.CleanupAsync("CaptureFailureUI", () => Task.Run(() =>
+                        File.WriteAllText(Path.Combine(output.FullName, "F10_UI.xml"), ribbon.Snapshot().ToString()))).ConfigureAwait(false);
             }
             finally
             {
-                if (pageManager != null)
+                if (pageManager != null && ribbon?.CommandPending != true)
                 {
                     run.PageId = run.PageId ?? pageManager.TestPageId;
                     bool restored = await run.CleanupAsync("RestoreOriginalPage", pageManager.RestoreOriginalPageAsync).ConfigureAwait(false);
@@ -171,12 +175,17 @@ namespace TeXShift.Tests.E2E.Commands
                     else
                         run.Skip("DeleteTestResources", options.Cleanup ? "restore-failed" : "retained");
                 }
-                if (serviceContainer != null)
-                    await run.CleanupAsync("DisposeServices", () => { serviceContainer.Dispose(); return Task.CompletedTask; }).ConfigureAwait(false);
+                if (ribbon?.CommandPending == true)
+                {
+                    run.Skip("RestoreOriginalPage", "command-pending");
+                    run.Skip("DeleteTestResources", "command-pending");
+                    await run.CleanupAsync("WaitForCommand", () => throw new TimeoutException(
+                        "Command completion is unknown; the test page and OneNote session were retained.")).ConfigureAwait(false);
+                }
+                else if (ribbon != null)
+                    await run.CleanupAsync("RestoreRibbon", () => Task.Run(() => ribbon.Restore())).ConfigureAwait(false);
                 if (pageManager != null)
                     await run.CleanupAsync("DisposeOneNote", () => { pageManager.Dispose(); return Task.CompletedTask; }).ConfigureAwait(false);
-                if (previousForegroundWindow != IntPtr.Zero)
-                    await run.CleanupAsync("RestoreFocus", () => { TestPageManager.FocusWindow(previousForegroundWindow); return Task.CompletedTask; }).ConfigureAwait(false);
             }
 
             exitCode = run.Finish(exitCode);
@@ -198,10 +207,5 @@ namespace TeXShift.Tests.E2E.Commands
             return exitCode;
         }
 
-        private static bool IsPdfExportFailure(ConversionResult result)
-        {
-            return result?.Error is IOException ||
-                result?.Error?.Message.IndexOf("PDF export", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
     }
 }

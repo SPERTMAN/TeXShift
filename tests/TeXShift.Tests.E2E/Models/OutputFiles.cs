@@ -13,5 +13,8 @@ namespace TeXShift.Tests.E2E.Models
         public string Perf { get; set; }
         public string ReversedMarkdown { get; set; }
         public string SelectionXml { get; set; }
+        public string RibbonCommand { get; set; }
+        public string UiSnapshot { get; set; }
+        public string ErrorDialog { get; set; }
     }
 }

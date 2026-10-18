@@ -9,6 +9,9 @@
   <ItemGroup>
     <!-- Framework references -->
     <Reference Include="System.Management" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
 
   <ItemGroup>

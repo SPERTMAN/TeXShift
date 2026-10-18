@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using System.Windows.Automation;
 
 namespace TeXShift.Tests.E2E.Commands
 {
@@ -44,9 +45,11 @@ namespace TeXShift.Tests.E2E.Commands
                         landedPageId = await ReadCurrentlyViewedPageIdAsync().ConfigureAwait(false);
                         cyclePassed = convertExitCode == CommandHelpers.ExitSuccess
                             && string.Equals(landedPageId, targetPageId, StringComparison.OrdinalIgnoreCase);
+                        if (cyclePassed) await VerifyAttachedSessionAsync(targetPageId).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
+                        cyclePassed = false;
                         CommandHelpers.EmitError($"Restore cycle {index + 1} failed: {ex.Message}", ex);
                     }
 
@@ -67,6 +70,26 @@ namespace TeXShift.Tests.E2E.Commands
             return passed == pageIds.Length
                 ? CommandHelpers.ExitSuccess
                 : CommandHelpers.ExitConversionFailed;
+        }
+
+        private static async Task VerifyAttachedSessionAsync(string originalPageId)
+        {
+            using (var manager = await TestPageManager.CreateAsync().ConfigureAwait(false))
+            {
+                manager.CloseLaunchedOneNoteOnDispose();
+                foreach (bool minimized in new[] { false, true })
+                {
+                    if (minimized)
+                        await Task.Run(() => ((WindowPattern)AutomationElement.FromHandle(manager.MainWindowHandle)
+                            .GetCurrentPattern(WindowPattern.Pattern)).SetWindowVisualState(WindowVisualState.Minimized)).ConfigureAwait(false);
+                    if (await RunConvertAsync().ConfigureAwait(false) != 0)
+                        throw new InvalidOperationException("Conversion failed in an existing OneNote session.");
+                    await manager.SaveCurrentPageAsync().ConfigureAwait(false);
+                    if (manager.OriginalPageId != originalPageId)
+                        throw new InvalidOperationException("The existing session did not return to its original page.");
+                    Console.Out.WriteLine(minimized ? "attached-minimized: PASS" : "attached: PASS");
+                }
+            }
         }
 
         private static async Task SeedRestorePointerAsync(string targetPageId)
