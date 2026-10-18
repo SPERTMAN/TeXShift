@@ -172,6 +172,18 @@ namespace TeXShift.AddIn
                 var ribbon = _ribbon;
                 _ribbon = null;
                 SafeReleaseComObject(ribbon);
+                try
+                {
+                    // TeXShift owns its COM surrogate. Disconnect WPF accessibility providers before
+                    // it exits; run outside any synchronous window-message callback to permit COM calls.
+                    int hr = System.Threading.Tasks.Task.Run(() => NativeMethods.UiaDisconnectAllProviders())
+                        .GetAwaiter().GetResult();
+                    Marshal.ThrowExceptionForHR(hr);
+                }
+                catch (Exception ex)
+                {
+                    RuntimeLog.Write($"Failed to disconnect UI Automation providers: {ex}");
+                }
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 GC.Collect();
