@@ -14,6 +14,11 @@
                             size="large"
                             onAction="OnReverseConvertButtonClick"
                             imageMso="Undo" />
+                    <button id="btnPastePlainText"
+                            getLabel="GetButtonLabel"
+                            size="large"
+                            onAction="OnPastePlainTextButtonClick"
+                            imageMso="Paste" />
                 </group>
                 <group id="grpDebugTools" getLabel="GetGroupLabel" getVisible="GetDebugGroupVisible">
                     <button id="btnDebugConvert"

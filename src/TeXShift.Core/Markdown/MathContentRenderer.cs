@@ -30,6 +30,7 @@ namespace TeXShift.Core.Markdown
 
         public async Task<XElement> RenderDisplayAsync(string latex, XNamespace ns)
         {
+            var displayMode = _settings.GetDisplayMode();
             var oe = new XElement(ns + "OE", new XAttribute("alignment", "center"),
                 new XAttribute("spaceBefore", "8.8"), new XAttribute("spaceAfter", "8.8"),
                 new XAttribute("style", "font-family:'Cambria Math';font-size:" + _settings.DisplayFontSize.ToString("0.###", CultureInfo.InvariantCulture) + "pt"));
@@ -37,8 +38,9 @@ namespace TeXShift.Core.Markdown
                 oe.Add(new XElement(ns + "T", new XCData(SourceText(latex, true))));
             else
             {
-                var expression = await _engine.ParseAsync(latex, true).ConfigureAwait(false);
-                if (_settings.DisplayAsImage)
+                var compact = displayMode == MathDisplayMode.NativeCompact;
+                var expression = await _engine.ParseAsync(latex, !compact).ConfigureAwait(false);
+                if (displayMode == MathDisplayMode.Image)
                 {
                     var image = await _engine.RenderImageAsync(expression, _settings.DisplayFontSize).ConfigureAwait(false);
                     oe.Add(new XElement(ns + "Image", new XAttribute("format", "png"),
@@ -46,6 +48,8 @@ namespace TeXShift.Core.Markdown
                         new XElement(ns + "Size", new XAttribute("width", image.WidthPt), new XAttribute("height", image.HeightPt)),
                         new XElement(ns + "Data", image.Base64Png)));
                 }
+                else if (compact)
+                    oe.Add(new XElement(ns + "T", new XCData(RenderCompactDisplay(expression))));
                 else
                     oe.Add(new XElement(ns + "T", new XCData(Wrap(OneNoteNativeMathRenderer.Render(expression, _settings.DisplayFontSize)))));
             }
@@ -53,6 +57,14 @@ namespace TeXShift.Core.Markdown
         }
 
         private static string Wrap(string mathml) => "<!--[if mathML]>" + mathml + "<![endif]-->";
+        private string RenderCompactDisplay(MathExpression expression)
+        {
+            return "<span style='font-family:Cambria Math;font-size:" +
+                _settings.DisplayFontSize.ToString("0.###", CultureInfo.InvariantCulture) +
+                "pt' lang='x-none'>\u200B</span>" +
+                Wrap(OneNoteNativeMathRenderer.Render(expression, _settings.DisplayFontSize, true)) +
+                "<span lang='x-none'>\u200B</span>";
+        }
         private static string SourceText(string latex, bool display) =>
             (display ? "$$" : "$") + OneNoteHtmlTextEscaper.Escape(latex) + (display ? "$$" : "$");
     }

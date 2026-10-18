@@ -152,7 +152,8 @@ namespace TeXShift.Core.Tests
         private static string AdaptToOneNote(string mathMl)
         {
             var type = typeof(IMathEngine).Assembly.GetType("TeXShift.Core.Math.OneNoteNativeMathRenderer", true);
-            var method = type.GetMethod("Render", BindingFlags.Public | BindingFlags.Static);
+            var method = type.GetMethod("Render", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(MathExpression), typeof(double) }, null);
             var expression = new MathExpression("", true, XElement.Parse(mathMl));
             return ConditionalCommentStart + (string)method.Invoke(null, new object[] { expression, 11.0 }) + "<![endif]-->";
         }

@@ -22,6 +22,7 @@ namespace TeXShift.AddIn
 
                 ["btnSilentConvert"] = "Ribbon_Button_Convert",
                 ["btnReverseConvert"] = "Ribbon_Button_ReverseConvert",
+                ["btnPastePlainText"] = "Ribbon_Button_PastePlainText",
                 ["btnDebugConvert"] = "Ribbon_Button_DebugConvert",
                 ["btnDebugReverseConvert"] = "Ribbon_Button_DebugReverseConvert",
                 ["btnDebugXml"] = "Ribbon_Button_SavePageXml",

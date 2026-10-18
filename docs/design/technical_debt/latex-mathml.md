@@ -4,7 +4,7 @@
 
 `MathJaxEngine` 在专用 STA 上负责 LaTeX → 标准 MathML，以及标准 MathML → SVG → PNG。`MathExpression` 保留源码、显示模式和不可变的 MathML；OneNote 适配只修改副本。
 
-`MathContentRenderer` 统一行内和独立公式的输出。默认使用 `OneNoteNativeMathRenderer`，保留 OneNote 原生可编辑公式。设置中的高保真图片选项只作用于独立公式：OneNote 的 OE 内容模型不能把图片和文本组成同一行。图片使用白底 PNG，按设置字号输出三倍像素密度。
+`MathContentRenderer` 统一行内和独立公式的输出。独立公式设置提供原生展开、原生紧凑和高保真图片三种互斥模式，默认使用原生展开并保留 OneNote 原生可编辑公式。原生紧凑模式通过行内布局支持居中，同时让大型运算符和上下限遵循紧凑样式。高保真图片只作用于独立公式：OneNote 的 OE 内容模型不能把图片和文本组成同一行。图片使用白底 PNG，按设置字号输出三倍像素密度。
 
 独立公式字号由 `Math.DisplayFontSize` 控制；行内公式跟随正文。
 
