@@ -1,4 +1,6 @@
 using System;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Markdig;
 using TeXShift.Core.Abstractions;
 using TeXShift.Core.Configuration;
@@ -19,6 +21,27 @@ namespace TeXShift.Core.Services
     /// </summary>
     public class ServiceContainer : IDisposable
     {
+        /// <summary>Reads the dialog owner on the shared OneNote STA; no COM objects leave it.</summary>
+        public Task<IntPtr> GetOneNoteWindowHandleAsync(OneNoteApp.Application application)
+        {
+            return GetOneNoteDispatcher(application).InvokeAsync(app =>
+            {
+                OneNoteApp.Windows windows = null;
+                OneNoteApp.Window window = null;
+                try
+                {
+                    windows = app.Windows;
+                    window = windows?.CurrentWindow;
+                    return window == null ? IntPtr.Zero : new IntPtr(unchecked((long)window.WindowHandle));
+                }
+                finally
+                {
+                    if (window != null) Marshal.ReleaseComObject(window);
+                    if (windows != null) Marshal.ReleaseComObject(windows);
+                }
+            });
+        }
+
         // Singleton instances (shared for entire add-in lifetime)
         private readonly Lazy<OneNoteStyleConfig> _styleConfig;
         private readonly Lazy<MarkdownPipeline> _markdownPipeline;

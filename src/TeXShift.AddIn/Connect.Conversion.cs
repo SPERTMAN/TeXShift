@@ -231,7 +231,16 @@ namespace TeXShift.AddIn
 
         private void ShowWpfErrorDialog(string userMessage, string technicalDetails, string debugFolderPath)
         {
-            var parentHwnd = NativeMethods.GetForegroundWindow();
+            IntPtr parentHwnd = IntPtr.Zero;
+            try
+            {
+                parentHwnd = _serviceContainer.GetOneNoteWindowHandleAsync(_oneNoteApp).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                // OneNote itself may have disconnected. Keep the error visible as an unowned window.
+                RuntimeLog.Write($"Could not resolve the OneNote error dialog owner: {ex}");
+            }
             Exception threadException = null;
 
             var thread = new System.Threading.Thread(() =>
@@ -248,6 +257,7 @@ namespace TeXShift.AddIn
                 }
                 catch (Exception ex)
                 {
+                    RuntimeLog.Write($"Error dialog failed: {ex}");
                     threadException = ex;
                 }
                 finally
