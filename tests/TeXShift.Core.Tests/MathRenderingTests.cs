@@ -84,13 +84,55 @@ namespace TeXShift.Core.Tests
         }
 
         [TestMethod]
+        public async Task CompactDisplayUsesInlineMathToAllowCentering()
+        {
+            var engine = new Engine("<mo>∑</mo><mi>x</mi>");
+            var renderer = new MathContentRenderer(engine, new MathSettings
+            {
+                DisplayMode = MathDisplayMode.NativeCompact,
+                DisplayFontSize = 14
+            });
+
+            var oe = await renderer.RenderDisplayAsync("\\sum x", Ns);
+            var text = oe.Element(Ns + "T").Value;
+
+            Assert.IsTrue(text.StartsWith("<span", StringComparison.Ordinal));
+            StringAssert.Contains(text, "font-size:14pt");
+            Assert.IsTrue(engine.LastDisplayMode == false);
+        }
+
+        [TestMethod]
         public void ExistingSettingsCanEnableImagesWithoutSpecifyingSize()
         {
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes("{\"Math\":{\"DisplayAsImage\":true}}")))
             {
                 var settings = (AppSettings)new DataContractJsonSerializer(typeof(AppSettings)).ReadObject(stream);
                 Assert.AreEqual(11.0, settings.Math.DisplayFontSize);
-                Assert.IsTrue(settings.Math.DisplayAsImage);
+                Assert.AreEqual(MathDisplayMode.Image, settings.Math.GetDisplayMode());
+            }
+        }
+
+        [TestMethod]
+        public void DisplayModeSettingsRoundTripAsMutuallyExclusiveMode()
+        {
+            var settings = new AppSettings
+            {
+                Math = new MathSettings
+                {
+                    DisplayMode = MathDisplayMode.NativeCompact,
+                    DisplayFontSize = 14
+                }
+            };
+
+            using (var stream = new MemoryStream())
+            {
+                var serializer = new DataContractJsonSerializer(typeof(AppSettings));
+                serializer.WriteObject(stream, settings);
+                stream.Position = 0;
+                var restored = (AppSettings)serializer.ReadObject(stream);
+
+                Assert.AreEqual(MathDisplayMode.NativeCompact, restored.Math.GetDisplayMode());
+                Assert.AreEqual(14.0, restored.Math.DisplayFontSize);
             }
         }
 
@@ -100,8 +142,13 @@ namespace TeXShift.Core.Tests
         {
             public XElement Math { get; }
             public int ImageCalls { get; private set; }
+            public bool? LastDisplayMode { get; private set; }
             public Engine(string content) { Math = XElement.Parse("<math xmlns='" + Mml + "'>" + content + "</math>"); }
-            public Task<MathExpression> ParseAsync(string latex, bool displayMode) => Task.FromResult(new MathExpression(latex, displayMode, Math));
+            public Task<MathExpression> ParseAsync(string latex, bool displayMode)
+            {
+                LastDisplayMode = displayMode;
+                return Task.FromResult(new MathExpression(latex, displayMode, Math));
+            }
             public Task<MathImage> RenderImageAsync(MathExpression expression, double fontSizePt)
             {
                 ImageCalls++;

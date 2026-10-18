@@ -299,6 +299,10 @@
     <value>恢复默认设置失败：&#xA;&#xA;{0}</value>
   </data>
   <data name="Settings_Section_Math" xml:space="preserve"><value>公式</value></data>
-  <data name="Settings_Math_Image" xml:space="preserve"><value>独立公式使用高保真图片</value></data>
+  <data name="Settings_Math_DisplayMode" xml:space="preserve"><value>独立公式排版</value></data>
+  <data name="Settings_Math_NativeExpanded" xml:space="preserve"><value>原生展开排版</value></data>
+  <data name="Settings_Math_NativeCompact" xml:space="preserve"><value>原生紧凑排版（支持居中）</value></data>
+  <data name="Settings_Math_Image" xml:space="preserve"><value>高保真图片</value></data>
+  <data name="Settings_Math_CompactDescription" xml:space="preserve"><value>紧凑模式会缩小大型运算符，并将上下限移到侧边。</value></data>
   <data name="Settings_MathFontSize" xml:space="preserve"><value>独立公式字号</value></data>
 </root>

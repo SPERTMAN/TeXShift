@@ -55,7 +55,7 @@
                 <Setter Property="materialDesign:TextFieldAssist.DecorationVisibility" Value="Collapsed"/>
             </Style>
 
-            <Style x:Key="CompactOutlinedComboBox" TargetType="ComboBox" BasedOn="{StaticResource MaterialDesignOutlinedComboBox}">
+            <Style TargetType="ComboBox" BasedOn="{StaticResource MaterialDesignOutlinedComboBox}">
                 <Setter Property="MinHeight" Value="{StaticResource CompactFieldMinHeight}"/>
                 <Setter Property="Padding" Value="10,0"/>
                 <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -82,7 +82,13 @@
                         <materialDesign:Card Padding="16" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock Text="{Binding MathSectionTitle}" Style="{StaticResource SectionTitle}"/>
-                                <CheckBox Content="{Binding MathImageLabel}" IsChecked="{Binding DisplayMathAsImage}"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding MathDisplayModeLabel}" Style="{StaticResource SettingsLabel}"/>
+                                    <ComboBox Width="230" ItemsSource="{Binding MathDisplayModes}"
+                                              DisplayMemberPath="Label" SelectedValuePath="Value"
+                                              SelectedValue="{Binding DisplayMathMode, Mode=TwoWay}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding MathDisplayModeDescription}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="{Binding DisplayMathFontSizeLabel}" Style="{StaticResource SettingsLabel}"/>
                                     <Slider Width="140" Minimum="8" Maximum="36" TickFrequency="0.5" IsSnapToTickEnabled="True" Value="{Binding MathFontSize}"/>
@@ -221,7 +227,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding FontLabel}" Style="{StaticResource SettingsLabel}"/>
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableFonts}" SelectedItem="{Binding CodeBlockFontFamily}"
-                                              Width="180" HorizontalAlignment="Left" Style="{StaticResource CompactOutlinedComboBox}">
+                                              Width="180" HorizontalAlignment="Left">
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding}" FontFamily="{Binding}"/>
@@ -279,7 +285,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding FontLabel}" Style="{StaticResource SettingsLabel}"/>
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableFonts}" SelectedItem="{Binding InlineCodeFontFamily}"
-                                              Width="180" HorizontalAlignment="Left" Style="{StaticResource CompactOutlinedComboBox}">
+                                              Width="180" HorizontalAlignment="Left">
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding}" FontFamily="{Binding}"/>
@@ -308,7 +314,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding ThemeLabel}" Style="{StaticResource SettingsLabel}"/>
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableMermaidThemes}" SelectedItem="{Binding MermaidTheme}"
-                                              Width="180" HorizontalAlignment="Left" Style="{StaticResource CompactOutlinedComboBox}"/>
+                                              Width="180" HorizontalAlignment="Left"/>
                                 </Grid>
 
                                 <!-- Theme preview on a white page background, as in OneNote -->
@@ -368,8 +374,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding LanguageLabel}" Style="{StaticResource SettingsLabel}"/>
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableLanguages}" SelectedItem="{Binding SelectedLanguage}"
-                                              DisplayMemberPath="DisplayName" Width="180" HorizontalAlignment="Left"
-                                              Style="{StaticResource CompactOutlinedComboBox}"/>
+                                              DisplayMemberPath="DisplayName" Width="180" HorizontalAlignment="Left"/>
                                 </Grid>
                             </StackPanel>
                         </materialDesign:Card>

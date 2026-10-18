@@ -180,12 +180,31 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
 
         #endregion
 
-        private bool _displayMathAsImage;
-        public bool DisplayMathAsImage { get => _displayMathAsImage; set => SetProperty(ref _displayMathAsImage, value); }
+        private MathDisplayMode _displayMathMode;
+        public MathDisplayMode DisplayMathMode
+        {
+            get => _displayMathMode;
+            set
+            {
+                if (SetProperty(ref _displayMathMode, value))
+                    OnPropertyChanged(nameof(MathDisplayModeDescription));
+            }
+        }
+
         private double _mathFontSize = 11;
         public double MathFontSize { get => _mathFontSize; set => SetProperty(ref _mathFontSize, value); }
         public string MathSectionTitle => UIResources.GetString("Settings_Section_Math");
-        public string MathImageLabel => UIResources.GetString("Settings_Math_Image");
+        public string MathDisplayModeLabel => UIResources.GetString("Settings_Math_DisplayMode");
+        public ObservableCollection<MathDisplayModeOption> MathDisplayModes { get; } =
+            new ObservableCollection<MathDisplayModeOption>
+            {
+                new MathDisplayModeOption(MathDisplayMode.NativeExpanded, "Settings_Math_NativeExpanded"),
+                new MathDisplayModeOption(MathDisplayMode.NativeCompact, "Settings_Math_NativeCompact"),
+                new MathDisplayModeOption(MathDisplayMode.Image, "Settings_Math_Image")
+            };
+        public string MathDisplayModeDescription => DisplayMathMode == MathDisplayMode.NativeCompact
+            ? UIResources.GetString("Settings_Math_CompactDescription")
+            : string.Empty;
 
         #region Mermaid Settings
 
@@ -407,7 +426,7 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
             var quoteBlockSettings = settings.QuoteBlock ?? new QuoteBlockStyleSettings();
             var headingSettings = settings.Headings ?? new HeadingStyleSettings();
             var mathSettings = settings.Math ?? new MathSettings();
-            DisplayMathAsImage = mathSettings.DisplayAsImage;
+            DisplayMathMode = mathSettings.GetDisplayMode();
             MathFontSize = mathSettings.DisplayFontSize;
             var mermaidSettings = settings.Mermaid ?? new MermaidSettings();
 
@@ -527,7 +546,7 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
                     H5FontSize = H5FontSize,
                     H6FontSize = H6FontSize
                 },
-                Math = new MathSettings { DisplayAsImage = DisplayMathAsImage, DisplayFontSize = MathFontSize },
+                Math = new MathSettings { DisplayMode = DisplayMathMode, DisplayFontSize = MathFontSize },
                 Mermaid = new MermaidSettings
                 {
                     Theme = string.IsNullOrWhiteSpace(MermaidTheme) ? "default" : MermaidTheme,
@@ -599,6 +618,18 @@ namespace TeXShift.AddIn.UI.WPF.ViewModels
 
             public string Code { get; }
             public string DisplayName { get; }
+        }
+
+        public sealed class MathDisplayModeOption
+        {
+            public MathDisplayModeOption(MathDisplayMode value, string resourceKey)
+            {
+                Value = value;
+                Label = UIResources.GetString(resourceKey);
+            }
+
+            public MathDisplayMode Value { get; }
+            public string Label { get; }
         }
     }
 }

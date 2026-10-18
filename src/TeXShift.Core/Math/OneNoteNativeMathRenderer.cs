@@ -11,9 +11,12 @@ namespace TeXShift.Core.Math
     internal static class OneNoteNativeMathRenderer
     {
         public static string Render(MathExpression expression, double fontSizePt)
+            => Render(expression, fontSizePt, false);
+
+        public static string Render(MathExpression expression, double fontSizePt, bool forceRootSize)
         {
             var math = expression.CopyMathML();
-            if (expression.DisplayMode && math.Attribute("mathsize") == null)
+            if ((expression.DisplayMode || forceRootSize) && math.Attribute("mathsize") == null)
                 math.SetAttributeValue("mathsize", fontSizePt.ToString("0.###", CultureInfo.InvariantCulture) + "pt");
             foreach (var entry in MathStyleResolver.Resolve(math, fontSizePt, expression.DisplayMode))
                 ApplyStyle(entry.Key, entry.Value);

@@ -275,6 +275,10 @@
     <value>Failed to restore default settings:&#xA;&#xA;{0}</value>
   </data>
   <data name="Settings_Section_Math" xml:space="preserve"><value>Math</value></data>
-  <data name="Settings_Math_Image" xml:space="preserve"><value>Render display equations as images</value></data>
+  <data name="Settings_Math_DisplayMode" xml:space="preserve"><value>Display equation layout</value></data>
+  <data name="Settings_Math_NativeExpanded" xml:space="preserve"><value>Native expanded</value></data>
+  <data name="Settings_Math_NativeCompact" xml:space="preserve"><value>Native compact (supports centering)</value></data>
+  <data name="Settings_Math_Image" xml:space="preserve"><value>High-fidelity image</value></data>
+  <data name="Settings_Math_CompactDescription" xml:space="preserve"><value>Compact mode reduces large operators and moves limits to the side.</value></data>
   <data name="Settings_MathFontSize" xml:space="preserve"><value>Display equation size</value></data>
 </root>

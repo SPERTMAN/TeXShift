@@ -73,8 +73,20 @@ namespace TeXShift.Core.Configuration
     }
 
     [DataContract]
+    public enum MathDisplayMode
+    {
+        NativeExpanded = 0,
+        NativeCompact = 1,
+        Image = 2
+    }
+
+    [DataContract]
     public sealed class MathSettings
     {
+        [DataMember]
+        public MathDisplayMode DisplayMode { get; set; } = MathDisplayMode.NativeExpanded;
+
+        // Kept for settings files written before DisplayMode was introduced.
         [DataMember]
         public bool DisplayAsImage { get; set; }
         [DataMember]
@@ -82,6 +94,21 @@ namespace TeXShift.Core.Configuration
 
         [OnDeserializing]
         private void InitializeDefaults(StreamingContext context) { DisplayFontSize = 11; }
+
+        [OnDeserialized]
+        private void MigrateLegacyDisplayMode(StreamingContext context)
+        {
+            if (DisplayAsImage)
+                DisplayMode = MathDisplayMode.Image;
+        }
+
+        [OnSerializing]
+        private void SynchronizeLegacyDisplayMode(StreamingContext context)
+        {
+            DisplayAsImage = DisplayMode == MathDisplayMode.Image;
+        }
+
+        public MathDisplayMode GetDisplayMode() => DisplayAsImage ? MathDisplayMode.Image : DisplayMode;
     }
 
     /// <summary>
