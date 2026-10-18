@@ -9,10 +9,11 @@ namespace TeXShift.Tests.E2E.Models
     /// </summary>
     internal sealed class PageSelection
     {
-        private PageSelection(string fromText, string toText)
+        private PageSelection(string fromText, string toText, bool wholeOutline = false)
         {
             FromText = fromText;
             ToText = toText;
+            WholeOutline = wholeOutline;
         }
 
         /// <summary>
@@ -27,6 +28,9 @@ namespace TeXShift.Tests.E2E.Models
         public bool IsDefault => FromText == null;
 
         public bool IsRange => ToText != null;
+        public bool WholeOutline { get; }
+
+        public static PageSelection Outline(string paragraphText) => new PageSelection(RequireText(paragraphText), null, true);
 
         public static PageSelection Caret(string paragraphText)
         {

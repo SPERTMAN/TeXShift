@@ -14,6 +14,8 @@ namespace TeXShift.Tests.E2E.Commands
         public const int ExitInvalidArguments = 3;
         public const int ExitPdfFailed = 4;
         public const int ExitReverseFailed = 5;
+        public const int ExitCleanupFailed = E2ERunReport.CleanupFailureExitCode;
+        public const int ExitDiagnosticsFailed = 7;
 
         public static int EmitArgumentError(string message, string testName, DirectoryInfo output, long durationMs)
         {
@@ -57,6 +59,7 @@ namespace TeXShift.Tests.E2E.Commands
 
         public static OutputFiles CollectOutputFiles(DirectoryInfo output, DateTime startUtc, string pdfPath)
         {
+            output?.Refresh();
             if (output == null || !output.Exists)
             {
                 return null;
@@ -67,6 +70,8 @@ namespace TeXShift.Tests.E2E.Commands
                 Markdown = FindNewestFile(output, "F01_Input_Markdown_*.md", startUtc),
                 OriginalXml = FindNewestFile(output, "F02_Original_XML_*.xml", startUtc),
                 ConvertedXml = FindNewestFile(output, "F03_Converted_XML_*.xml", startUtc),
+                PageChangesXml = FindNewestFile(output, "F03_Page_Changes_*.xml", startUtc),
+                FinalSelectionXml = FindNewestFile(output, "F08_Final_Selection_*.xml", startUtc),
                 FinalXml = FindNewestFile(output, "F04_Final_Page_XML_Basic_*.xml", startUtc),
                 FinalXmlFull = FindNewestFile(output, "F04_Final_Page_XML_Full_*.xml", startUtc),
                 Perf = FindNewestFile(output, "F06_Perf_*.txt", startUtc),
@@ -84,6 +89,24 @@ namespace TeXShift.Tests.E2E.Commands
                 .FirstOrDefault();
 
             return candidates?.Name;
+        }
+
+        public static string WriteJsonFile(DirectoryInfo directory, string prefix, object value)
+        {
+            if (directory == null || value == null)
+            {
+                return null;
+            }
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true
+            };
+            string fileName = $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss_fff}.json";
+            string path = Path.Combine(directory.FullName, fileName);
+            File.WriteAllText(path, JsonSerializer.Serialize(value, options));
+            return fileName;
         }
     }
 }

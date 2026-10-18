@@ -2,7 +2,7 @@ using System.IO;
 
 namespace TeXShift.Tests.E2E.Commands
 {
-    internal sealed class ConvertCommandOptions
+    internal sealed class PageTestOptions
     {
         public FileInfo Input { get; set; }
 
@@ -10,11 +10,14 @@ namespace TeXShift.Tests.E2E.Commands
 
         public FileInfo Page { get; set; }
 
+        public FileInfo Changes { get; set; }
+
         public string Caret { get; set; }
+        public string Outline { get; set; }
 
         public string[] Select { get; set; }
 
-        public bool Foreground { get; set; }
+        public string Mode { get; set; } = "com";
 
         public DirectoryInfo Output { get; set; }
 

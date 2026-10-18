@@ -5,6 +5,8 @@ namespace TeXShift.Tests.E2E.Models
         public string Markdown { get; set; }
         public string OriginalXml { get; set; }
         public string ConvertedXml { get; set; }
+        public string PageChangesXml { get; set; }
+        public string FinalSelectionXml { get; set; }
         public string FinalXml { get; set; }
         public string FinalXmlFull { get; set; }
         public string Pdf { get; set; }

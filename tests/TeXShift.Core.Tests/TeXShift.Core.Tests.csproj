@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\TeXShift.Tests.E2E\Models\E2ERunReport.cs" Link="E2E\E2ERunReport.cs" />
     <ProjectReference Include="..\..\src\TeXShift.Core\TeXShift.Core.csproj" />
   </ItemGroup>
 </Project>

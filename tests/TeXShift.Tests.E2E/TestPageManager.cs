@@ -8,7 +8,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 using System.Xml.Linq;
 using Microsoft.Win32;
 using OneNoteInterop = Microsoft.Office.Interop.OneNote;
@@ -104,9 +103,12 @@ namespace TeXShift.Tests.E2E
             return string.Equals(value, "1", StringComparison.Ordinal);
         }
 
-        private readonly StaTaskRunner _staRunner;
-        private OneNoteInterop.Application _oneNoteApp;
+        private readonly OneNoteComDispatcher _oneNoteDispatcher;
         private bool _disposed;
+        private string _createdNotebookId;
+        private string _createdSectionId;
+        private string _testPageId;
+        private string _importedSectionPath;
         private bool _createdNotebook;  // Track if we created the notebook
         private string _notebookPath;   // Path to delete on cleanup
         private string _originalPageId; // Page ID to navigate back to after test
@@ -118,7 +120,6 @@ namespace TeXShift.Tests.E2E
 
         private TestPageManager()
         {
-            _staRunner = new StaTaskRunner("TeXShift_E2E_OneNote_STA");
             try
             {
                 // OneNote does not expose its restore target without a real window. Navigating to
@@ -132,15 +133,10 @@ namespace TeXShift.Tests.E2E
                     WaitForOneNoteMainWindow();
                 }
 
-                _oneNoteApp = _staRunner.Run(() =>
-                {
-                    var appType = Type.GetTypeFromProgID("OneNote.Application");
-                    return (OneNoteInterop.Application)Activator.CreateInstance(appType);
-                });
+                _oneNoteDispatcher = OneNoteComDispatcher.Connect();
             }
             catch
             {
-                _staRunner.Dispose();
                 _ownedOneNoteProcess?.Dispose();
                 throw;
             }
@@ -151,18 +147,30 @@ namespace TeXShift.Tests.E2E
             return Task.Run(() => new TestPageManager());
         }
 
-        public OneNoteInterop.Application OneNoteApp => _oneNoteApp;
+        public OneNoteComDispatcher OneNoteDispatcher => _oneNoteDispatcher;
 
         public bool LaunchedOneNoteProcess => _launchedOneNoteProcess;
+        public string OriginalPageId => _originalPageId;
+        public string TestPageId => _testPageId;
+        public int? OneNoteProcessId
+        {
+            get
+            {
+                var window = GetOneNoteMainWindowHandle();
+                if (window == IntPtr.Zero) return _ownedOneNoteProcess?.Id;
+                GetWindowThreadProcessId(window, out uint pid);
+                return (int)pid;
+            }
+        }
 
         public Task<string> GetHierarchyPagesXmlAsync()
         {
-            return Task.Run(() => _staRunner.Run(() =>
+            return _oneNoteDispatcher.InvokeAsync(app =>
             {
                 EnsureNotDisposed();
-                _oneNoteApp.GetHierarchy(null, OneNoteInterop.HierarchyScope.hsPages, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
+                app.GetHierarchy(null, OneNoteInterop.HierarchyScope.hsPages, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
                 return hierarchyXml;
-            }));
+            });
         }
 
         public Task<string> GetPageContentBasicXmlAsync(string pageId)
@@ -172,12 +180,12 @@ namespace TeXShift.Tests.E2E
                 throw new ArgumentException("Page ID is required.", nameof(pageId));
             }
 
-            return Task.Run(() => _staRunner.Run(() =>
+            return _oneNoteDispatcher.InvokeAsync(app =>
             {
                 EnsureNotDisposed();
-                _oneNoteApp.GetPageContent(pageId, out string pageXml, OneNoteInterop.PageInfo.piBasic, OneNoteInterop.XMLSchema.xs2013);
+                app.GetPageContent(pageId, out string pageXml, OneNoteInterop.PageInfo.piBasic, OneNoteInterop.XMLSchema.xs2013);
                 return pageXml;
-            }));
+            });
         }
 
         public Task NavigateToAsync(string pageId)
@@ -187,11 +195,11 @@ namespace TeXShift.Tests.E2E
                 throw new ArgumentException("Page ID is required.", nameof(pageId));
             }
 
-            return Task.Run(() => _staRunner.Run(() =>
+            return _oneNoteDispatcher.InvokeAsync(app =>
             {
                 EnsureNotDisposed();
-                _oneNoteApp.NavigateTo(pageId, null, false);
-            }));
+                app.NavigateTo(pageId, null, false);
+            });
         }
 
         public Task NavigateToWhenReadyAsync(string pageId)
@@ -201,7 +209,7 @@ namespace TeXShift.Tests.E2E
                 throw new ArgumentException("Page ID is required.", nameof(pageId));
             }
 
-            return Task.Run(() => _staRunner.Run(() =>
+            return _oneNoteDispatcher.InvokeAsync(app =>
             {
                 EnsureNotDisposed();
                 var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteComReadyTimeoutMs);
@@ -210,7 +218,7 @@ namespace TeXShift.Tests.E2E
                 {
                     try
                     {
-                        _oneNoteApp.NavigateTo(pageId, null, false);
+                        app.NavigateTo(pageId, null, false);
                         return;
                     }
                     catch (COMException)
@@ -223,20 +231,20 @@ namespace TeXShift.Tests.E2E
 
                     Thread.Sleep(OneNoteComReadyPollIntervalMs);
                 }
-            }));
+            });
         }
 
         public Task WaitForOneNoteReadyAsync()
         {
-            return Task.Run(() => _staRunner.Run(() =>
+            return _oneNoteDispatcher.InvokeAsync(app =>
             {
                 EnsureNotDisposed();
-                WaitForCurrentPage();
+                WaitForCurrentPage(app);
                 if (string.IsNullOrWhiteSpace(_originalPageId))
                 {
                     throw new TimeoutException("OneNote did not expose a current page before the COM readiness timeout.");
                 }
-            }));
+            });
         }
 
         public void CloseLaunchedOneNoteOnDispose()
@@ -277,7 +285,7 @@ namespace TeXShift.Tests.E2E
                 throw new ArgumentException("Test name is required.", nameof(testName));
             }
 
-            return Task.Run(() => _staRunner.Run(() => CreateTestPage(testName, markdownContent ?? string.Empty, selection ?? PageSelection.Default)));
+            return _oneNoteDispatcher.InvokeAsync(app => CreateTestPage(app, testName, markdownContent ?? string.Empty, selection ?? PageSelection.Default));
         }
 
         /// <summary>
@@ -291,26 +299,15 @@ namespace TeXShift.Tests.E2E
                 throw new ArgumentException("Page file is required.", nameof(pageFilePath));
             }
 
-            return Task.Run(() => _staRunner.Run(() => CreateTestPageFromFile(pageFilePath, selection ?? PageSelection.Default)));
-        }
-
-        public Task DeletePageAsync(string pageId)
-        {
-            if (string.IsNullOrWhiteSpace(pageId))
-            {
-                return Task.CompletedTask;
-            }
-
-            return Task.Run(() => _staRunner.Run(() => DeletePage(pageId)));
+            return _oneNoteDispatcher.InvokeAsync(app => CreateTestPageFromFile(app, pageFilePath, selection ?? PageSelection.Default));
         }
 
         /// <summary>
-        /// Deletes the test notebook and section used by E2E tests.
-        /// Call this after all tests are complete.
+        /// Deletes only resources created by this test session, including incomplete pages.
         /// </summary>
         public Task CleanupTestResourcesAsync()
         {
-            return Task.Run(() => _staRunner.Run(CleanupTestResources));
+            return _oneNoteDispatcher.InvokeAsync(CleanupTestResources);
         }
 
         /// <summary>
@@ -319,39 +316,39 @@ namespace TeXShift.Tests.E2E
         /// </summary>
         public Task SaveCurrentPageAsync()
         {
-            return Task.Run(() => _staRunner.Run(SaveCurrentPage));
+            return _oneNoteDispatcher.InvokeAsync(SaveCurrentPage);
         }
 
         /// <summary>
         /// Navigates back to the original page that was active before the test.
-        /// Call this after cleanup to restore the user's view.
+        /// Call this before cleanup to keep the restore target valid.
         /// </summary>
         public Task RestoreOriginalPageAsync()
         {
-            return Task.Run(() => _staRunner.Run(RestoreOriginalPage));
+            return _oneNoteDispatcher.InvokeAsync(RestoreOriginalPage);
         }
 
-        private void SaveCurrentPage()
+        private void SaveCurrentPage(OneNoteInterop.Application app)
         {
             EnsureNotDisposed();
 
             if (_launchedOneNoteProcess)
             {
-                WaitForCurrentPage();
+                WaitForCurrentPage(app);
                 return;
             }
 
-            SaveCurrentPageOnce();
+            SaveCurrentPageOnce(app);
         }
 
-        private void SaveCurrentPageOnce()
+        private void SaveCurrentPageOnce(OneNoteInterop.Application app)
         {
             OneNoteInterop.Window window = null;
             OneNoteInterop.Windows windows = null;
 
             try
             {
-                windows = _oneNoteApp.Windows;
+                windows = app.Windows;
                 if (windows == null || windows.Count == 0)
                 {
                     return;
@@ -370,7 +367,7 @@ namespace TeXShift.Tests.E2E
             }
         }
 
-        private void WaitForCurrentPage()
+        private void WaitForCurrentPage(OneNoteInterop.Application app)
         {
             var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteComReadyTimeoutMs);
 
@@ -381,7 +378,7 @@ namespace TeXShift.Tests.E2E
 
                 try
                 {
-                    windows = _oneNoteApp.Windows;
+                    windows = app.Windows;
                     if (windows != null && windows.Count > 0)
                     {
                         window = windows.CurrentWindow;
@@ -428,7 +425,7 @@ namespace TeXShift.Tests.E2E
             }
         }
 
-        private void RestoreOriginalPage()
+        private void RestoreOriginalPage(OneNoteInterop.Application app)
         {
             EnsureNotDisposed();
 
@@ -436,9 +433,11 @@ namespace TeXShift.Tests.E2E
 
             if (!string.IsNullOrWhiteSpace(_originalPageId))
             {
-                _oneNoteApp.NavigateTo(_originalPageId, null, false);
+                app.NavigateTo(_originalPageId, null, false);
                 return;
             }
+            if (_testPageId != null)
+                throw new InvalidOperationException("The original OneNote page was unavailable; test resources were retained.");
         }
 
         private void LaunchOneNoteWithWindowIfNeeded()
@@ -644,74 +643,58 @@ namespace TeXShift.Tests.E2E
             if (_ownedOneNoteProcess != null) CloseOneNoteProcess(_ownedOneNoteProcess);
         }
 
-        private void CleanupTestResources()
+        private void CleanupTestResources(OneNoteInterop.Application app)
         {
             EnsureNotDisposed();
-
-            // Only cleanup if we created the notebook in this session
-            if (!_createdNotebook || string.IsNullOrWhiteSpace(_notebookPath))
+            var failures = new List<Exception>();
+            void Attempt(Action action)
             {
-                return;
+                try { action(); }
+                catch (Exception ex) { failures.Add(ex); }
             }
 
-            _oneNoteApp.GetHierarchy(null, OneNoteInterop.HierarchyScope.hsNotebooks, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
-            var doc = XDocument.Parse(hierarchyXml);
-
-            var notebook = doc.Descendants(OneNoteNamespace + "Notebook")
-                .FirstOrDefault(node =>
-                    string.Equals((string)node.Attribute("name"), TestNotebookName, StringComparison.OrdinalIgnoreCase)
-                    && !IsBoolAttributeTrue(node, "isInRecycleBin"));
-
-            if (notebook != null)
-            {
-                string notebookId = (string)notebook.Attribute("ID");
-
-                if (!string.IsNullOrWhiteSpace(notebookId))
+            if (_testPageId != null) Attempt(() => DeletePage(app, _testPageId));
+            if (_importedSectionId != null)
+                Attempt(() =>
                 {
-                    // Close the notebook first (required before deletion)
-                    _oneNoteApp.CloseNotebook(notebookId, false);
-
-                    // Delete the notebook folder from disk
-                    if (Directory.Exists(_notebookPath))
-                    {
-                        try
-                        {
-                            Directory.Delete(_notebookPath, recursive: true);
-                        }
-                        catch (IOException)
-                        {
-                            // Files may be locked, ignore
-                        }
-                        catch (UnauthorizedAccessException)
-                        {
-                            // No permission, ignore
-                        }
-                    }
-                }
-            }
+                    app.DeleteHierarchy(_importedSectionId, DateTime.MinValue, true);
+                    _importedSectionId = null;
+                });
+            if (_importedSectionPath != null && File.Exists(_importedSectionPath))
+                Attempt(() => File.Delete(_importedSectionPath));
+            if (_createdSectionId != null)
+                Attempt(() => app.DeleteHierarchy(_createdSectionId, DateTime.MinValue, true));
+            if (_createdNotebook)
+                Attempt(() =>
+                {
+                    app.CloseNotebook(_createdNotebookId, false);
+                    if (Directory.Exists(_notebookPath)) Directory.Delete(_notebookPath, recursive: true);
+                });
+            if (failures.Count > 0) throw new AggregateException("Test resource cleanup failed.", failures);
         }
 
-        private string CreateTestPage(string testName, string markdownContent, PageSelection selection)
+        private string CreateTestPage(OneNoteInterop.Application app, string testName, string markdownContent, PageSelection selection)
         {
             EnsureNotDisposed();
 
-            string notebookId = GetOrCreateNotebookId();
-            string sectionId = GetOrCreateSectionId(notebookId);
+            string notebookId = GetOrCreateNotebookId(app);
+            string sectionId = GetOrCreateSectionId(app, notebookId);
 
-            _oneNoteApp.CreateNewPage(sectionId, out string pageId, OneNoteInterop.NewPageStyle.npsDefault);
+            app.CreateNewPage(sectionId, out string pageId, OneNoteInterop.NewPageStyle.npsDefault);
             if (string.IsNullOrWhiteSpace(pageId))
             {
                 throw new InvalidOperationException("Failed to create a new OneNote page.");
             }
 
-            UpdatePageContent(pageId, testName, markdownContent, addCaretParagraph: selection.IsDefault);
-            PlaceSelectionOrDeletePage(pageId, selection);
+            _testPageId = pageId;
+            UpdatePageContent(app, pageId, testName, markdownContent, addCaretParagraph: selection.IsDefault);
+            PlaceSelection(app, pageId, selection);
             return pageId;
         }
 
-        private void UpdatePageContent(string pageId, string title, string content, bool addCaretParagraph)
+        private void UpdatePageContent(OneNoteInterop.Application app, string pageId, string title, string content, bool addCaretParagraph)
         {
-            _oneNoteApp.GetPageContent(pageId, out string pageXml, OneNoteInterop.PageInfo.piAll, OneNoteInterop.XMLSchema.xs2013);
+            app.GetPageContent(pageId, out string pageXml, OneNoteInterop.PageInfo.piAll, OneNoteInterop.XMLSchema.xs2013);
             var doc = XDocument.Parse(pageXml);
             var ns = doc.Root?.Name.Namespace ?? OneNoteNamespace;
 
@@ -760,30 +743,31 @@ namespace TeXShift.Tests.E2E
             }
             outline.Add(oeChildren);
 
-            _oneNoteApp.UpdatePageContent(doc.ToString(), DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);
+            app.UpdatePageContent(doc.ToString(), DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);
         }
 
-        private string CreateTestPageFromFile(string pageFilePath, PageSelection selection)
+        private string CreateTestPageFromFile(OneNoteInterop.Application app, string pageFilePath, PageSelection selection)
         {
             EnsureNotDisposed();
 
-            string notebookId = GetOrCreateNotebookId();
+            string notebookId = GetOrCreateNotebookId(app);
             string pageId = string.Equals(Path.GetExtension(pageFilePath), ".one", StringComparison.OrdinalIgnoreCase)
-                ? ImportSectionPage(notebookId, pageFilePath)
-                : CreatePageFromXml(GetOrCreateSectionId(notebookId), File.ReadAllText(pageFilePath));
+                ? ImportSectionPage(app, notebookId, pageFilePath)
+                : CreatePageFromXml(app, GetOrCreateSectionId(app, notebookId), File.ReadAllText(pageFilePath));
 
-            PlaceSelectionOrDeletePage(pageId, selection);
+            PlaceSelection(app, pageId, selection);
             return pageId;
         }
 
-        private string CreatePageFromXml(string sectionId, string pageXml)
+        private string CreatePageFromXml(OneNoteInterop.Application app, string sectionId, string pageXml)
         {
-            _oneNoteApp.CreateNewPage(sectionId, out string pageId, OneNoteInterop.NewPageStyle.npsDefault);
+            app.CreateNewPage(sectionId, out string pageId, OneNoteInterop.NewPageStyle.npsDefault);
             if (string.IsNullOrWhiteSpace(pageId))
             {
                 throw new InvalidOperationException("Failed to create a new OneNote page.");
             }
 
+            _testPageId = pageId;
             var doc = XDocument.Parse(pageXml);
 
             // Object identities, view state and selection belong to the source page.
@@ -795,16 +779,16 @@ namespace TeXShift.Tests.E2E
                 element.Attribute("isCurrentlyViewed")?.Remove();
             }
 
-            _oneNoteApp.UpdatePageContent(doc.ToString(), DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);
+            app.UpdatePageContent(doc.ToString(), DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);
             return pageId;
         }
 
         /// <summary>
         /// Opens a copy of the section file in the test notebook and returns its first page.
         /// </summary>
-        private string ImportSectionPage(string notebookId, string sectionFilePath)
+        private string ImportSectionPage(OneNoteInterop.Application app, string notebookId, string sectionFilePath)
         {
-            _oneNoteApp.GetHierarchy(notebookId, OneNoteInterop.HierarchyScope.hsSelf, out string notebookXml, OneNoteInterop.XMLSchema.xs2013);
+            app.GetHierarchy(notebookId, OneNoteInterop.HierarchyScope.hsSelf, out string notebookXml, OneNoteInterop.XMLSchema.xs2013);
             string notebookPath = (string)XDocument.Parse(notebookXml).Root?.Attribute("path");
             if (string.IsNullOrWhiteSpace(notebookPath))
             {
@@ -815,23 +799,25 @@ namespace TeXShift.Tests.E2E
                 notebookPath,
                 $"{Path.GetFileNameWithoutExtension(sectionFilePath)}_{DateTime.Now:yyyyMMdd_HHmmss}.one");
             File.Copy(sectionFilePath, sectionPath);
+            _importedSectionPath = sectionPath;
 
-            _oneNoteApp.OpenHierarchy(sectionPath, null, out string sectionId, OneNoteInterop.CreateFileType.cftNone);
+            app.OpenHierarchy(sectionPath, null, out string sectionId, OneNoteInterop.CreateFileType.cftNone);
             if (string.IsNullOrWhiteSpace(sectionId))
             {
                 throw new InvalidOperationException($"Failed to open the section file '{sectionPath}'.");
             }
 
             _importedSectionId = sectionId;
-            _importedPageId = WaitForSectionPageIds(sectionId).FirstOrDefault()
+            _importedPageId = WaitForSectionPageIds(app, sectionId).FirstOrDefault()
                 ?? throw new InvalidOperationException("The section file has no page.");
+            _testPageId = _importedPageId;
             return _importedPageId;
         }
 
         /// <summary>
         /// Lists the pages of a just-opened section, waiting while OneNote is still loading it.
         /// </summary>
-        private List<string> WaitForSectionPageIds(string sectionId)
+        private List<string> WaitForSectionPageIds(OneNoteInterop.Application app, string sectionId)
         {
             var deadline = DateTime.UtcNow.AddMilliseconds(OneNoteComReadyTimeoutMs);
 
@@ -839,7 +825,7 @@ namespace TeXShift.Tests.E2E
             {
                 try
                 {
-                    var pageIds = GetPageIds(sectionId);
+                    var pageIds = GetPageIds(app, sectionId);
                     if (pageIds.Count > 0 || DateTime.UtcNow >= deadline)
                     {
                         return pageIds;
@@ -854,36 +840,12 @@ namespace TeXShift.Tests.E2E
         }
 
         /// <summary>
-        /// Leaves no half-prepared page behind when the selection cannot be set up.
-        /// </summary>
-        private void PlaceSelectionOrDeletePage(string pageId, PageSelection selection)
-        {
-            try
-            {
-                PlaceSelection(pageId, selection);
-            }
-            catch
-            {
-                try
-                {
-                    DeletePage(pageId);
-                }
-                catch
-                {
-                    // Keep the selection failure as the reported error
-                }
-
-                throw;
-            }
-        }
-
-        /// <summary>
         /// Sets up <paramref name="selection"/> with OneNote's own navigation and keyboard handling, so
         /// the reader sees the selection markup a user's caret or drag would produce.
         /// </summary>
-        private void PlaceSelection(string pageId, PageSelection selection)
+        private void PlaceSelection(OneNoteInterop.Application app, string pageId, PageSelection selection)
         {
-            _oneNoteApp.GetPageContent(pageId, out string pageXml, OneNoteInterop.PageInfo.piBasic, OneNoteInterop.XMLSchema.xs2013);
+            app.GetPageContent(pageId, out string pageXml, OneNoteInterop.PageInfo.piBasic, OneNoteInterop.XMLSchema.xs2013);
             var paragraphs = XDocument.Parse(pageXml).Root.Elements(OneNoteNamespace + "Outline")
                 .SelectMany(outline => outline.Descendants(OneNoteNamespace + "OE"))
                 .ToList();
@@ -893,16 +855,25 @@ namespace TeXShift.Tests.E2E
                 : FindParagraph(paragraphs, selection.FromText);
             string firstId = (string)first.Attribute("objectID");
 
+            if (selection.WholeOutline)
+            {
+                string outlineId = (string)first.Ancestors(OneNoteNamespace + "Outline").First().Attribute("objectID");
+                app.NavigateTo(pageId, outlineId, false);
+                WaitForSelection(app, pageId, page => page.Descendants(OneNoteNamespace + "Outline")
+                    .Any(outline => (string)outline.Attribute("objectID") == outlineId && outline.Attribute("selected") != null));
+                return;
+            }
+
             // NavigateTo selects the whole paragraph.
-            _oneNoteApp.NavigateTo(pageId, firstId, false);
-            WaitForSelection(pageId, page => FindById(page, firstId)?.DescendantsAndSelf()
+            app.NavigateTo(pageId, firstId, false);
+            WaitForSelection(app, pageId, page => FindById(page, firstId)?.DescendantsAndSelf()
                 .Any(node => node.Attribute("selected") != null) == true);
 
             if (!selection.IsRange)
             {
                 // End collapses it to a caret, which OneNote reports as an empty selected T.
                 PressKeyInOneNote(VkEnd);
-                WaitForSelection(pageId, page => FindById(page, firstId)?.Elements(OneNoteNamespace + "T")
+                WaitForSelection(app, pageId, page => FindById(page, firstId)?.Elements(OneNoteNamespace + "T")
                     .Any(text => (string)text.Attribute("selected") == "all" && text.Value.Length == 0) == true);
                 return;
             }
@@ -915,18 +886,18 @@ namespace TeXShift.Tests.E2E
                     $"The paragraph containing \"{selection.ToText}\" must follow \"{selection.FromText}\" in the same Outline.");
             }
 
-            ExtendSelectionTo(pageId, (string)last.Attribute("objectID"));
+            ExtendSelectionTo(app, pageId, (string)last.Attribute("objectID"));
         }
 
         /// <summary>
         /// Extends the selection line by line (Shift+Down) until it reaches the last paragraph, then to the
         /// end of each of its lines (Shift+End) until the paragraph is fully selected.
         /// </summary>
-        private void ExtendSelectionTo(string pageId, string lastOeId)
+        private void ExtendSelectionTo(OneNoteInterop.Application app, string pageId, string lastOeId)
         {
             HoldShiftInOneNote(() =>
             {
-                string signature = ReadSelection(pageId, lastOeId, out string lastState);
+                string signature = ReadSelection(app, pageId, lastOeId, out string lastState);
                 int lastKey = 0;
                 for (int step = 0; lastState != "all"; step++)
                 {
@@ -944,7 +915,7 @@ namespace TeXShift.Tests.E2E
                     do
                     {
                         Thread.Sleep(SelectionPollIntervalMs);
-                        signature = ReadSelection(pageId, lastOeId, out lastState);
+                        signature = ReadSelection(app, pageId, lastOeId, out lastState);
                     }
                     while (signature == previous && DateTime.UtcNow < deadline);
                 }
@@ -967,9 +938,9 @@ namespace TeXShift.Tests.E2E
         /// <summary>
         /// Returns a fingerprint of the page selection and how much of the given OE it covers.
         /// </summary>
-        private string ReadSelection(string pageId, string oeId, out string oeState)
+        private string ReadSelection(OneNoteInterop.Application app, string pageId, string oeId, out string oeState)
         {
-            _oneNoteApp.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
+            app.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
             var page = XDocument.Parse(xml);
             oeState = (string)FindById(page, oeId)?.Attribute("selected");
 
@@ -982,6 +953,7 @@ namespace TeXShift.Tests.E2E
         /// Polls GetPageContent until the page selection satisfies <paramref name="isReady"/>, or timeout.
         /// </summary>
         private void WaitForSelection(
+            OneNoteInterop.Application app,
             string pageId,
             Func<XDocument, bool> isReady,
             int timeoutMs = 10000,
@@ -991,7 +963,7 @@ namespace TeXShift.Tests.E2E
 
             while (DateTime.UtcNow < deadline)
             {
-                _oneNoteApp.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
+                app.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piSelection, OneNoteInterop.XMLSchema.xs2013);
                 if (isReady(XDocument.Parse(xml)))
                 {
                     return;
@@ -1074,13 +1046,14 @@ namespace TeXShift.Tests.E2E
             return mainWindow;
         }
 
-        private void DeletePage(string pageId)
+        private void DeletePage(OneNoteInterop.Application app, string pageId)
         {
             EnsureNotDisposed();
 
             // An imported section copy exists only for its page, so it is removed with it.
             bool imported = pageId == _importedPageId;
-            _oneNoteApp.DeleteHierarchy(imported ? _importedSectionId : pageId, DateTime.MinValue, true);
+            app.DeleteHierarchy(imported ? _importedSectionId : pageId, DateTime.MinValue, true);
+            if (_testPageId == pageId) _testPageId = null;
             if (imported)
             {
                 _importedPageId = null;
@@ -1088,9 +1061,9 @@ namespace TeXShift.Tests.E2E
             }
         }
 
-        private string GetOrCreateNotebookId()
+        private string GetOrCreateNotebookId(OneNoteInterop.Application app)
         {
-            _oneNoteApp.GetHierarchy(null, OneNoteInterop.HierarchyScope.hsNotebooks, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
+            app.GetHierarchy(null, OneNoteInterop.HierarchyScope.hsNotebooks, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
             var doc = XDocument.Parse(hierarchyXml);
 
             var notebook = doc.Descendants(OneNoteNamespace + "Notebook")
@@ -1104,34 +1077,36 @@ namespace TeXShift.Tests.E2E
                 return (string)notebook.Attribute("ID");
             }
 
-            _oneNoteApp.GetSpecialLocation(OneNoteInterop.SpecialLocation.slDefaultNotebookFolder, out string defaultFolder);
+            app.GetSpecialLocation(OneNoteInterop.SpecialLocation.slDefaultNotebookFolder, out string defaultFolder);
             if (string.IsNullOrWhiteSpace(defaultFolder))
             {
                 throw new InvalidOperationException("Cannot resolve OneNote default notebook folder.");
             }
 
             string notebookPath = Path.Combine(defaultFolder, TestNotebookName);
-            _oneNoteApp.OpenHierarchy(notebookPath, null, out string notebookId, OneNoteInterop.CreateFileType.cftNotebook);
+            bool directoryExisted = Directory.Exists(notebookPath);
+            app.OpenHierarchy(notebookPath, null, out string notebookId, OneNoteInterop.CreateFileType.cftNotebook);
             if (string.IsNullOrWhiteSpace(notebookId))
             {
                 throw new InvalidOperationException("Failed to create or open the E2E notebook.");
             }
 
-            // We created this notebook - safe to delete on cleanup
-            _createdNotebook = true;
-            _notebookPath = notebookPath;
+            // An existing directory may contain a closed notebook; only delete newly created directories.
+            _createdNotebook = !directoryExisted;
+            _createdNotebookId = notebookId;
+            _notebookPath = Path.GetFullPath(notebookPath);
 
             return notebookId;
         }
 
-        private string GetOrCreateSectionId(string notebookId)
+        private string GetOrCreateSectionId(OneNoteInterop.Application app, string notebookId)
         {
             if (string.IsNullOrWhiteSpace(notebookId))
             {
                 throw new InvalidOperationException("Notebook ID is required.");
             }
 
-            _oneNoteApp.GetHierarchy(notebookId, OneNoteInterop.HierarchyScope.hsSections, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
+            app.GetHierarchy(notebookId, OneNoteInterop.HierarchyScope.hsSections, out string hierarchyXml, OneNoteInterop.XMLSchema.xs2013);
             var doc = XDocument.Parse(hierarchyXml);
 
             // Try to find existing E2E section (exclude recycle bin)
@@ -1145,7 +1120,7 @@ namespace TeXShift.Tests.E2E
             }
 
             // Create new section
-            _oneNoteApp.GetHierarchy(notebookId, OneNoteInterop.HierarchyScope.hsSelf, out string notebookXml, OneNoteInterop.XMLSchema.xs2013);
+            app.GetHierarchy(notebookId, OneNoteInterop.HierarchyScope.hsSelf, out string notebookXml, OneNoteInterop.XMLSchema.xs2013);
             var notebookDoc = XDocument.Parse(notebookXml);
             var notebookPath = (string)notebookDoc.Root?.Attribute("path");
 
@@ -1155,26 +1130,23 @@ namespace TeXShift.Tests.E2E
             }
 
             string sectionPath = Path.Combine(notebookPath, TestSectionName + ".one");
-            _oneNoteApp.OpenHierarchy(sectionPath, null, out string sectionId, OneNoteInterop.CreateFileType.cftSection);
+            bool sectionExisted = File.Exists(sectionPath);
+            app.OpenHierarchy(sectionPath, null, out string sectionId, OneNoteInterop.CreateFileType.cftSection);
 
             if (string.IsNullOrWhiteSpace(sectionId))
             {
                 throw new InvalidOperationException($"Failed to create section '{TestSectionName}' in notebook.");
             }
 
+            if (sectionExisted) return sectionId;
+
+            _createdSectionId = sectionId;
             // OneNote automatically creates an untitled page when creating a new section.
             // Capture the auto-generated page IDs immediately and delete only those.
-            var autoGeneratedPageIds = GetPageIds(sectionId);
+            var autoGeneratedPageIds = WaitForSectionPageIds(app, sectionId);
             foreach (var autoPageId in autoGeneratedPageIds)
             {
-                try
-                {
-                    _oneNoteApp.DeleteHierarchy(autoPageId, DateTime.MinValue, true);
-                }
-                catch
-                {
-                    // Ignore deletion failures for auto-generated pages
-                }
+                app.DeleteHierarchy(autoPageId, DateTime.MinValue, true);
             }
 
             return sectionId;
@@ -1191,9 +1163,9 @@ namespace TeXShift.Tests.E2E
         /// <summary>
         /// Gets all page IDs in the specified section.
         /// </summary>
-        private List<string> GetPageIds(string sectionId)
+        private List<string> GetPageIds(OneNoteInterop.Application app, string sectionId)
         {
-            _oneNoteApp.GetHierarchy(sectionId, OneNoteInterop.HierarchyScope.hsPages, out string pagesXml, OneNoteInterop.XMLSchema.xs2013);
+            app.GetHierarchy(sectionId, OneNoteInterop.HierarchyScope.hsPages, out string pagesXml, OneNoteInterop.XMLSchema.xs2013);
             var doc = XDocument.Parse(pagesXml);
 
             return doc.Descendants(OneNoteNamespace + "Page")
@@ -1207,27 +1179,10 @@ namespace TeXShift.Tests.E2E
             if (_disposed) return;
             _disposed = true;
 
-            if (_oneNoteApp != null)
-            {
-                Task.Run(() => _staRunner.Run(() =>
-                {
-                    try
-                    {
-                        Marshal.ReleaseComObject(_oneNoteApp);
-                    }
-                    catch
-                    {
-                        // Ignore failures during best-effort COM cleanup
-                    }
-                })).GetAwaiter().GetResult();
-                _oneNoteApp = null;
-            }
-
-            _staRunner.Dispose();
-
-            // Close OneNote after COM is released
             try
             {
+                // Release COM before closing a process owned by this session.
+                _oneNoteDispatcher.Dispose();
                 if (_shouldCloseOneNote) CloseOneNoteProcess();
             }
             finally { _ownedOneNoteProcess?.Dispose(); }
@@ -1248,86 +1203,6 @@ namespace TeXShift.Tests.E2E
             public int caretTop;
             public int caretRight;
             public int caretBottom;
-        }
-
-        private sealed class StaTaskRunner : IDisposable
-        {
-            private readonly Thread _staThread;
-            private readonly TaskCompletionSource<bool> _ready = new TaskCompletionSource<bool>();
-            private SynchronizationContext _syncContext;
-            private bool _disposed;
-
-            public StaTaskRunner(string threadName)
-            {
-                _staThread = new Thread(RunMessageLoop)
-                {
-                    IsBackground = true,
-                    Name = threadName
-                };
-                _staThread.SetApartmentState(ApartmentState.STA);
-                _staThread.Start();
-                _ready.Task.GetAwaiter().GetResult();
-            }
-
-            public T Run<T>(Func<T> func)
-            {
-                if (_disposed)
-                {
-                    throw new ObjectDisposedException(nameof(StaTaskRunner));
-                }
-
-                var tcs = new TaskCompletionSource<T>();
-                _syncContext.Post(_ =>
-                {
-                    try
-                    {
-                        tcs.SetResult(func());
-                    }
-                    catch (Exception ex)
-                    {
-                        tcs.SetException(ex);
-                    }
-                }, null);
-
-                return tcs.Task.GetAwaiter().GetResult();
-            }
-
-            public void Run(Action action)
-            {
-                Run(() =>
-                {
-                    action();
-                    return true;
-                });
-            }
-
-            private void RunMessageLoop()
-            {
-                using (var context = new WindowsFormsSynchronizationContext())
-                {
-                    _syncContext = context;
-                    SynchronizationContext.SetSynchronizationContext(context);
-                    _ready.SetResult(true);
-                    Application.Run();
-                }
-            }
-
-            public void Dispose()
-            {
-                if (_disposed) return;
-                _disposed = true;
-
-                if (_syncContext != null)
-                {
-                    _syncContext.Post(_ => Application.ExitThread(), null);
-                }
-
-                if (_staThread != null && _staThread.IsAlive)
-                {
-                    if (!_staThread.Join(TimeSpan.FromSeconds(5)))
-                        throw new TimeoutException("The OneNote COM thread did not exit.");
-                }
-            }
         }
     }
 }

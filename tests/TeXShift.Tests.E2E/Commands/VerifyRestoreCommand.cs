@@ -96,7 +96,7 @@ namespace TeXShift.Tests.E2E.Commands
             try
             {
                 Console.SetOut(TextWriter.Null);
-                return await ConvertCommand.RunAsync(new ConvertCommandOptions { Markdown = InlineMarkdown, Output = output }).ConfigureAwait(false);
+                return await PageTestCommand.RunAsync(new PageTestOptions { Markdown = InlineMarkdown, Output = output }).ConfigureAwait(false);
             }
             finally
             {

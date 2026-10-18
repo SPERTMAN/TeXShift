@@ -12,7 +12,8 @@ namespace TeXShift.Tests.E2E
         {
             var rootCommand = new RootCommand("TeXShift E2E Test Runner");
 
-            rootCommand.Subcommands.Add(CreateConvertCommand());
+            rootCommand.Subcommands.Add(CreatePageTestCommand());
+            rootCommand.Subcommands.Add(CreatePageTestCommand(replayWrite: true));
             rootCommand.Subcommands.Add(CreateReverseXmlCommand());
             rootCommand.Subcommands.Add(CreateDumpCommand());
             rootCommand.Subcommands.Add(CreateVerifyRestoreCommand());
@@ -20,7 +21,7 @@ namespace TeXShift.Tests.E2E
             return rootCommand.Parse(args).Invoke();
         }
 
-        private static Command CreateConvertCommand()
+        private static Command CreatePageTestCommand(bool replayWrite = false)
         {
             var inputOption = new Option<FileInfo>("--input", "-i")
             {
@@ -49,9 +50,15 @@ namespace TeXShift.Tests.E2E
                 AllowMultipleArgumentsPerToken = true
             };
 
-            var foregroundOption = new Option<bool>("--foreground")
+            var modeOption = new Option<string>("--mode")
             {
-                Description = "Make OneNote the active window before converting, as when a user clicks the ribbon (takes keyboard focus during the run)"
+                Description = "Run mode: com (default) or ui (activate OneNote before converting)",
+                DefaultValueFactory = _ => "com"
+            };
+
+            var outlineOption = new Option<string>("--outline")
+            {
+                Description = "Select the whole text box containing this paragraph text"
             };
 
             var outputOption = new Option<DirectoryInfo>("--output", "-o")
@@ -66,31 +73,42 @@ namespace TeXShift.Tests.E2E
                 DefaultValueFactory = _ => true
             };
 
-            var command = new Command("convert", "Convert markdown and export results");
+            var changesOption = new Option<FileInfo>("--changes")
+            {
+                Description = "Page-changes XML template. Tokens: {{pageId}}, {{outlineId}}, {{oe:0}} (zero-based OE in the selected outline). Submitted directly to OneNote.",
+                Required = true
+            };
+            var command = replayWrite
+                ? new Command("write-xml", "Replay an XML update against a disposable test page")
+                : new Command("convert", "Convert markdown and export results");
+            if (replayWrite) command.Options.Add(changesOption);
             command.Options.Add(inputOption);
             command.Options.Add(markdownOption);
             command.Options.Add(pageOption);
             command.Options.Add(caretOption);
+            command.Options.Add(outlineOption);
             command.Options.Add(selectOption);
-            command.Options.Add(foregroundOption);
+            command.Options.Add(modeOption);
             command.Options.Add(outputOption);
             command.Options.Add(cleanupOption);
 
             command.SetAction(async (parseResult, cancellationToken) =>
             {
-                var options = new ConvertCommandOptions
+                var options = new PageTestOptions
                 {
                     Input = parseResult.GetValue(inputOption),
                     Markdown = parseResult.GetValue(markdownOption),
                     Page = parseResult.GetValue(pageOption),
+                    Changes = replayWrite ? parseResult.GetValue(changesOption) : null,
                     Caret = parseResult.GetValue(caretOption),
+                    Outline = parseResult.GetValue(outlineOption),
                     Select = parseResult.GetValue(selectOption),
-                    Foreground = parseResult.GetValue(foregroundOption),
+                    Mode = parseResult.GetValue(modeOption),
                     Output = parseResult.GetValue(outputOption),
                     Cleanup = parseResult.GetValue(cleanupOption)
                 };
 
-                return await ConvertCommand.RunAsync(options).ConfigureAwait(false);
+                return await PageTestCommand.RunAsync(options).ConfigureAwait(false);
             });
 
             return command;

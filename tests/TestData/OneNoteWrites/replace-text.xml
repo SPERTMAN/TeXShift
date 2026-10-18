@@ -1,0 +1,10 @@
+<one:Page xmlns:one="http://schemas.microsoft.com/office/onenote/2013/onenote" ID="{{pageId}}">
+  <one:Outline objectID="{{outlineId}}">
+    <one:OEChildren>
+      <one:OE>
+        <one:T selected="all"><![CDATA[]]></one:T>
+        <one:T><![CDATA[Replacement text]]></one:T>
+      </one:OE>
+    </one:OEChildren>
+  </one:Outline>
+</one:Page>
