@@ -7,7 +7,6 @@ using TeXShift.Core.OneNote;
 using TeXShift.Core.OneNoteToMarkdown;
 using TeXShift.Core.Services.ReverseConversion;
 using TeXShift.Core.Utils;
-using OneNoteInterop = Microsoft.Office.Interop.OneNote;
 
 namespace TeXShift.Core.Services
 {
@@ -17,12 +16,12 @@ namespace TeXShift.Core.Services
     public sealed class ReverseConversionOrchestrator
     {
         private readonly ServiceContainer _serviceContainer;
-        private readonly OneNoteInterop.Application _oneNoteApp;
+        private readonly OneNoteComDispatcher _oneNoteDispatcher;
 
-        public ReverseConversionOrchestrator(ServiceContainer serviceContainer, OneNoteInterop.Application oneNoteApp)
+        internal ReverseConversionOrchestrator(ServiceContainer serviceContainer, OneNoteComDispatcher oneNoteDispatcher)
         {
             _serviceContainer = serviceContainer ?? throw new ArgumentNullException(nameof(serviceContainer));
-            _oneNoteApp = oneNoteApp ?? throw new ArgumentNullException(nameof(oneNoteApp));
+            _oneNoteDispatcher = oneNoteDispatcher ?? throw new ArgumentNullException(nameof(oneNoteDispatcher));
         }
 
         public async Task<ReverseConversionPipelineResult> ExecuteAsync(ReverseConversionOptions options)
@@ -51,7 +50,7 @@ namespace TeXShift.Core.Services
                     out perfTrace,
                     out perfSession);
 
-                var reader = _serviceContainer.CreateContentReader(_oneNoteApp);
+                var reader = _serviceContainer.CreateContentReader(_oneNoteDispatcher);
                 ReadResult readResult;
                 using (PerformanceTraceContext.Measure("Read.ExtractContentAsync"))
                 {
@@ -186,14 +185,14 @@ namespace TeXShift.Core.Services
                     }
                 }
 
-                var writer = _serviceContainer.CreateContentWriter(_oneNoteApp);
+                var writer = _serviceContainer.CreateContentWriter(_oneNoteDispatcher, logger);
                 using (PerformanceTraceContext.Measure("Write.ReplaceContentAsync"))
                 {
                     await writer.ReplaceContentAsync(readResult, outline).ConfigureAwait(false);
                 }
 
                 await OrchestratorDebugSessionHelper.LogFinalPageXmlAsync(
-                    _oneNoteApp,
+                    _oneNoteDispatcher,
                     options.WriteDebugFiles,
                     options.DumpFullPageXml,
                     logger,

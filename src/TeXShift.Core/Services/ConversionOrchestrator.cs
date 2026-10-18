@@ -7,7 +7,6 @@ using TeXShift.Core.Localization;
 using TeXShift.Core.OneNote;
 using TeXShift.Core.Services.ReverseConversion;
 using TeXShift.Core.Services.ForwardConversion;
-using OneNoteInterop = Microsoft.Office.Interop.OneNote;
 
 namespace TeXShift.Core.Services
 {
@@ -17,17 +16,17 @@ namespace TeXShift.Core.Services
     public class ConversionOrchestrator
     {
         private readonly ServiceContainer _serviceContainer;
-        private readonly OneNoteInterop.Application _oneNoteApp;
+        private readonly OneNoteComDispatcher _oneNoteDispatcher;
 
-        public ConversionOrchestrator(ServiceContainer serviceContainer, OneNoteInterop.Application oneNoteApp)
+        internal ConversionOrchestrator(ServiceContainer serviceContainer, OneNoteComDispatcher oneNoteDispatcher)
         {
             if (serviceContainer == null)
                 throw new ArgumentNullException(nameof(serviceContainer));
-            if (oneNoteApp == null)
-                throw new ArgumentNullException(nameof(oneNoteApp));
+            if (oneNoteDispatcher == null)
+                throw new ArgumentNullException(nameof(oneNoteDispatcher));
 
             _serviceContainer = serviceContainer;
-            _oneNoteApp = oneNoteApp;
+            _oneNoteDispatcher = oneNoteDispatcher;
         }
 
         /// <summary>
@@ -57,7 +56,7 @@ namespace TeXShift.Core.Services
                     out perfTrace,
                     out perfSession);
 
-                var reader = _serviceContainer.CreateContentReader(_oneNoteApp);
+                var reader = _serviceContainer.CreateContentReader(_oneNoteDispatcher);
                 ReadResult readResult;
                 using (PerformanceTraceContext.Measure("Read.ExtractContentAsync"))
                 {
@@ -132,14 +131,14 @@ namespace TeXShift.Core.Services
                     }
                 }
 
-                var writer = _serviceContainer.CreateContentWriter(_oneNoteApp);
+                var writer = _serviceContainer.CreateContentWriter(_oneNoteDispatcher, logger);
                 using (PerformanceTraceContext.Measure("Write.ReplaceContentAsync"))
                 {
                     await writer.WriteOutlinesAsync(readResult, outlines).ConfigureAwait(false);
                 }
 
                 await OrchestratorDebugSessionHelper.LogFinalPageXmlAsync(
-                    _oneNoteApp,
+                    _oneNoteDispatcher,
                     options.WriteDebugFiles,
                     options.DumpFullPageXml,
                     logger,
@@ -188,7 +187,7 @@ namespace TeXShift.Core.Services
             }
 
             string pdfPath = ResolvePdfOutputPath(options.OutputDirectory, result.DebugOutputFolder);
-            var publisher = _serviceContainer.CreateOneNotePublisher(_oneNoteApp);
+            var publisher = _serviceContainer.CreateOneNotePublisher(_oneNoteDispatcher);
             bool exported;
             using (PerformanceTraceContext.Measure("Export.ExportToPdfAsync"))
             {

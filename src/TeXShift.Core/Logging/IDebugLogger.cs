@@ -43,6 +43,9 @@ namespace TeXShift.Core.Logging
         /// </summary>
         Task LogConvertedXmlAsync(XElement convertedXml);
 
+        /// <summary>Logs the exact request before it is submitted to UpdatePageContent.</summary>
+        Task LogPageChangesAsync(string xml);
+
         /// <summary>
         /// Asynchronously logs the final, complete XML of the OneNote page after the update (basic view, without binary payloads).
         /// </summary>

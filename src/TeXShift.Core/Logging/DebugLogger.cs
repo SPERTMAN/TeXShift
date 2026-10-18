@@ -77,6 +77,14 @@ namespace TeXShift.Core.Logging
             await Task.Run(() => File.WriteAllText(finalXmlFile, FormatXml(finalXml), Utf8NoBom));
         }
 
+        public Task LogPageChangesAsync(string xml)
+        {
+            if (DebugSessionFolder == null) return Task.CompletedTask;
+            string path = Path.Combine(DebugSessionFolder,
+                $"{GetSessionPrefix(_sessionKind)}03_Page_Changes_{_sessionTimestamp}.xml");
+            return Task.Run(() => File.WriteAllText(path, xml, Utf8NoBom));
+        }
+
         public async Task LogFinalPageXmlFullAsync(string finalXml)
         {
             if (DebugSessionFolder == null) return;

@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using TeXShift.Core.Logging;
+using TeXShift.Core.OneNote;
 using OneNoteInterop = Microsoft.Office.Interop.OneNote;
 
 namespace TeXShift.Core.Services
@@ -40,7 +41,7 @@ namespace TeXShift.Core.Services
         }
 
         internal static async Task LogFinalPageXmlAsync(
-            OneNoteInterop.Application oneNoteApp,
+            OneNoteComDispatcher oneNoteDispatcher,
             bool writeDebugFiles,
             bool dumpFullPageXml,
             IDebugLogger logger,
@@ -54,9 +55,9 @@ namespace TeXShift.Core.Services
             string finalPageXml;
             using (PerformanceTraceContext.Measure("Write.GetFinalPageContent.Basic", "piBasic"))
             {
-                finalPageXml = await Task.Run(() =>
+                finalPageXml = await oneNoteDispatcher.InvokeAsync(app =>
                 {
-                    oneNoteApp.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piBasic, OneNoteInterop.XMLSchema.xs2013);
+                    app.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piBasic, OneNoteInterop.XMLSchema.xs2013);
                     return xml;
                 }).ConfigureAwait(false);
             }
@@ -74,9 +75,9 @@ namespace TeXShift.Core.Services
             string fullPageXml;
             using (PerformanceTraceContext.Measure("Write.GetFinalPageContent.Full", "piAll"))
             {
-                fullPageXml = await Task.Run(() =>
+                fullPageXml = await oneNoteDispatcher.InvokeAsync(app =>
                 {
-                    oneNoteApp.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piAll, OneNoteInterop.XMLSchema.xs2013);
+                    app.GetPageContent(pageId, out string xml, OneNoteInterop.PageInfo.piAll, OneNoteInterop.XMLSchema.xs2013);
                     return xml;
                 }).ConfigureAwait(false);
             }

@@ -6,15 +6,19 @@ using OneNoteInterop = Microsoft.Office.Interop.OneNote;
 
 namespace TeXShift.Core.OneNote
 {
+    // Named delegates keep embedded interop types out of generic arguments across assemblies.
+    public delegate T OneNoteFunction<T>(OneNoteInterop.Application application);
+    public delegate void OneNoteAction(OneNoteInterop.Application application);
+
     /// <summary>Runs OneNote COM calls on one STA with an explicitly marshaled application interface.</summary>
-    internal sealed class OneNoteComDispatcher : IDisposable
+    public sealed class OneNoteComDispatcher : IDisposable
     {
         private static readonly Guid ApplicationIid = typeof(OneNoteInterop.Application).GUID;
         private readonly StaWorker _worker;
         private IntPtr _interfaceStream;
         private OneNoteInterop.Application _application;
 
-        internal OneNoteComDispatcher(OneNoteInterop.Application application)
+        public OneNoteComDispatcher(OneNoteInterop.Application application)
         {
             if (application == null) throw new ArgumentNullException(nameof(application));
 
@@ -27,13 +31,41 @@ namespace TeXShift.Core.OneNote
             _worker = new StaWorker("TeXShift_OneNote_COM_STA", ReleaseApplication);
         }
 
-        internal Task<T> InvokeAsync<T>(Func<OneNoteInterop.Application, T> action)
+        /// <summary>Activates OneNote on the owned STA. The caller manages the OneNote window.</summary>
+        public static OneNoteComDispatcher Connect()
+        {
+            var dispatcher = new OneNoteComDispatcher();
+            try
+            {
+                dispatcher._worker.InvokeAsync(() =>
+                {
+                    var appType = Type.GetTypeFromProgID("OneNote.Application")
+                        ?? throw new InvalidOperationException("OneNote.Application is not registered.");
+                    dispatcher._application = (OneNoteInterop.Application)Activator.CreateInstance(appType);
+                    return Task.FromResult(true);
+                }).GetAwaiter().GetResult();
+                return dispatcher;
+            }
+            catch
+            {
+                dispatcher.Dispose();
+                throw;
+            }
+        }
+
+        private OneNoteComDispatcher()
+        {
+            _worker = new StaWorker("TeXShift_OneNote_COM_STA", ReleaseApplication);
+        }
+
+        /// <summary>Runs a call on the STA. Return managed data; COM references must stay inside the callback.</summary>
+        public Task<T> InvokeAsync<T>(OneNoteFunction<T> action)
         {
             if (action == null) throw new ArgumentNullException(nameof(action));
             return _worker.InvokeAsync(() => Task.FromResult(action(GetApplication())));
         }
 
-        internal Task InvokeAsync(Action<OneNoteInterop.Application> action)
+        public Task InvokeAsync(OneNoteAction action)
         {
             if (action == null) throw new ArgumentNullException(nameof(action));
             return _worker.InvokeAsync(() =>
@@ -73,6 +105,8 @@ namespace TeXShift.Core.OneNote
 
         private void ReleaseApplication()
         {
+            // Consume an unused marshal stream before releasing its application reference.
+            if (_interfaceStream != IntPtr.Zero) GetApplication();
             if (_application != null && Marshal.IsComObject(_application))
             {
                 Marshal.ReleaseComObject(_application);

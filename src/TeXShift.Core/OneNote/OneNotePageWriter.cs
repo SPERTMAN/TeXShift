@@ -19,11 +19,13 @@ namespace TeXShift.Core.OneNote
     public class OneNotePageWriter : IContentWriter
     {
         private readonly OneNoteComDispatcher _comDispatcher;
+        private readonly IDebugLogger _logger;
         private readonly XNamespace _ns = OneNoteXml.Namespace;
 
-        internal OneNotePageWriter(OneNoteComDispatcher comDispatcher)
+        internal OneNotePageWriter(OneNoteComDispatcher comDispatcher, IDebugLogger logger = null)
         {
             _comDispatcher = comDispatcher ?? throw new ArgumentNullException(nameof(comDispatcher));
+            _logger = logger;
         }
 
         /// <summary>
@@ -32,17 +34,6 @@ namespace TeXShift.Core.OneNote
         /// <param name="readResult">The original read result containing metadata</param>
         /// <param name="newOutlineXml">The new Outline XML element to insert</param>
         public Task ReplaceContentAsync(ReadResult readResult, XElement newOutlineXml)
-        {
-            return _comDispatcher.InvokeAsync(app => ReplaceContent(app, readResult, newOutlineXml));
-        }
-
-        /// <summary>
-        /// Replaces content in OneNote based on the read result and converted XML.
-        /// (Synchronous version - kept for internal use)
-        /// </summary>
-        /// <param name="readResult">The original read result containing metadata</param>
-        /// <param name="newOutlineXml">The new Outline XML element to insert</param>
-        private void ReplaceContent(OneNoteInterop.Application app, ReadResult readResult, XElement newOutlineXml)
         {
             if (readResult == null)
                 throw new ArgumentNullException(nameof(readResult));
@@ -53,15 +44,18 @@ namespace TeXShift.Core.OneNote
             if (!readResult.TargetObjectIds.Any())
                 throw new ArgumentException("TargetObjectIds is required", nameof(readResult));
 
-            WriteOutlines(app, readResult, new[] { BuildUpdatedOutline(readResult, newOutlineXml) });
+            return WriteOutlinesAsync(readResult, new[] { BuildUpdatedOutline(readResult, newOutlineXml) });
         }
 
-        public Task WriteOutlinesAsync(ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
+        public async Task WriteOutlinesAsync(ReadResult readResult, IReadOnlyList<XElement> outlines)
         {
-            return _comDispatcher.InvokeAsync(app => WriteOutlines(app, readResult, outlines));
+            string xml = BuildPageChanges(readResult, outlines);
+            if (_logger != null) await _logger.LogPageChangesAsync(xml).ConfigureAwait(false);
+            await _comDispatcher.InvokeAsync(app => UpdatePageContent(app, readResult.PageId,
+                (string)outlines[0].Attribute("objectID"), xml)).ConfigureAwait(false);
         }
 
-        private void WriteOutlines(OneNoteInterop.Application app, ReadResult readResult, System.Collections.Generic.IReadOnlyList<XElement> outlines)
+        private string BuildPageChanges(ReadResult readResult, IReadOnlyList<XElement> outlines)
         {
             if (readResult == null || string.IsNullOrEmpty(readResult.PageId))
                 throw new ArgumentException("A page ID is required.", nameof(readResult));
@@ -97,6 +91,7 @@ namespace TeXShift.Core.OneNote
 
             page.Add(hyperlinkQuickStyles);
 
+            OneNoteWriteSelection.PlaceCaret(outlines);
             page.Add(outlines);
 
             string updatedXml;
@@ -106,8 +101,17 @@ namespace TeXShift.Core.OneNote
             }
 
             PerformanceTraceContext.AddMetric("Write.PageChangesXmlChars", (updatedXml?.Length ?? 0).ToString());
+            return updatedXml;
+        }
+
+        private void UpdatePageContent(OneNoteInterop.Application app, string pageId, string outlineId, string updatedXml)
+        {
             try
             {
+                // Detach the live editor from paragraphs that this update may remove. The
+                // outline itself retains its identity; the request supplies the new caret.
+                using (PerformanceTraceContext.Measure("Write.OneNote.SelectOutline"))
+                    app.NavigateTo(pageId, outlineId, false);
                 using (PerformanceTraceContext.Measure("Write.OneNote.UpdatePageContent", "xs2013/force=true"))
                 {
                     app.UpdatePageContent(updatedXml, DateTime.MinValue, OneNoteInterop.XMLSchema.xs2013, true);

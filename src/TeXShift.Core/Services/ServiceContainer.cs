@@ -118,6 +118,11 @@ namespace TeXShift.Core.Services
             return new OneNotePageReader(GetOneNoteDispatcher(oneNoteApp));
         }
 
+        internal IContentReader CreateContentReader(OneNoteComDispatcher dispatcher)
+        {
+            return new OneNotePageReader(dispatcher ?? throw new ArgumentNullException(nameof(dispatcher)));
+        }
+
         /// <summary>
         /// Creates a new IMarkdownConverter instance.
         /// Transient lifetime: new instance per call.
@@ -137,28 +142,14 @@ namespace TeXShift.Core.Services
             return new OneNoteToMarkdownConverter(StyleConfig);
         }
 
-        /// <summary>
-        /// Creates a new IContentWriter instance.
-        /// Transient lifetime: new instance per call.
-        /// </summary>
-        public IContentWriter CreateContentWriter(OneNoteApp.Application oneNoteApp)
+        internal IContentWriter CreateContentWriter(OneNoteComDispatcher dispatcher, IDebugLogger logger = null)
         {
-            if (oneNoteApp == null)
-                throw new ArgumentNullException(nameof(oneNoteApp));
-
-            return new OneNotePageWriter(GetOneNoteDispatcher(oneNoteApp));
+            return new OneNotePageWriter(dispatcher ?? throw new ArgumentNullException(nameof(dispatcher)), logger);
         }
 
-        /// <summary>
-        /// Creates a new OneNotePublisher instance.
-        /// Transient lifetime: new instance per call.
-        /// </summary>
-        public OneNotePublisher CreateOneNotePublisher(OneNoteApp.Application oneNoteApp)
+        internal OneNotePublisher CreateOneNotePublisher(OneNoteComDispatcher dispatcher)
         {
-            if (oneNoteApp == null)
-                throw new ArgumentNullException(nameof(oneNoteApp));
-
-            return new OneNotePublisher(GetOneNoteDispatcher(oneNoteApp));
+            return new OneNotePublisher(dispatcher ?? throw new ArgumentNullException(nameof(dispatcher)));
         }
 
         /// <summary>
@@ -170,7 +161,16 @@ namespace TeXShift.Core.Services
             if (oneNoteApp == null)
                 throw new ArgumentNullException(nameof(oneNoteApp));
 
-            return new ConversionOrchestrator(this, oneNoteApp);
+            return new ConversionOrchestrator(this, GetOneNoteDispatcher(oneNoteApp));
+        }
+
+        /// <summary>Uses a caller-owned dispatcher. The caller releases it after the services.</summary>
+        public ConversionOrchestrator CreateConversionOrchestrator(OneNoteComDispatcher dispatcher)
+        {
+            if (dispatcher == null)
+                throw new ArgumentNullException(nameof(dispatcher));
+
+            return new ConversionOrchestrator(this, dispatcher);
         }
 
         /// <summary>
@@ -182,7 +182,16 @@ namespace TeXShift.Core.Services
             if (oneNoteApp == null)
                 throw new ArgumentNullException(nameof(oneNoteApp));
 
-            return new ReverseConversionOrchestrator(this, oneNoteApp);
+            return new ReverseConversionOrchestrator(this, GetOneNoteDispatcher(oneNoteApp));
+        }
+
+        /// <summary>Uses a caller-owned dispatcher. The caller releases it after the services.</summary>
+        public ReverseConversionOrchestrator CreateReverseConversionOrchestrator(OneNoteComDispatcher dispatcher)
+        {
+            if (dispatcher == null)
+                throw new ArgumentNullException(nameof(dispatcher));
+
+            return new ReverseConversionOrchestrator(this, dispatcher);
         }
 
         /// <summary>
@@ -210,15 +219,18 @@ namespace TeXShift.Core.Services
             }
             finally
             {
-                if (_mermaidService.IsValueCreated && _mermaidService.Value is IDisposable mermaidDisposable)
-                    mermaidDisposable.Dispose();
-                if (_oneNoteDispatcher != null)
-                    _oneNoteDispatcher.Dispose();
+                try
+                {
+                    if (_mermaidService.IsValueCreated && _mermaidService.Value is IDisposable mermaidDisposable)
+                        mermaidDisposable.Dispose();
+                }
+                finally { _oneNoteDispatcher?.Dispose(); }
             }
         }
 
         private OneNoteComDispatcher GetOneNoteDispatcher(OneNoteApp.Application oneNoteApp)
         {
+            if (oneNoteApp == null) throw new ArgumentNullException(nameof(oneNoteApp));
             lock (_oneNoteDispatcherLock)
             {
                 if (_oneNoteDispatcher == null)
