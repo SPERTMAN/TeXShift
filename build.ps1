@@ -96,9 +96,9 @@ function Invoke-Restore {
 
     foreach ($project in $projects) {
         $arguments = @("restore", $project, "-p:Platform=x64")
-        if ($Locked) {
-            $arguments += "--locked-mode"
-        }
+        #if ($Locked) {
+            #$arguments += "--locked-mode"
+        #}
         Invoke-Dotnet $arguments
     }
 }
