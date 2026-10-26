@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 只要推送类似 v1.0.0 的 tag 就会触发
+
+permissions:
+  contents: write # 必须赋予 write 权限才能创建 Release 和上传附件
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Install Inno Setup 7
+        shell: powershell
+        run: |
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-7_0_2/innosetup-7.0.2-x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\innosetup.exe"
+          Start-Process -Wait -FilePath "$env:RUNNER_TEMP\innosetup.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/ALLUSERS"
+          $iscc = "$env:ProgramFiles\Inno Setup 7\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Inno Setup 7 not found at $iscc" }
+          "ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Setup signing key
+        shell: powershell
+        # 如果你把正式私钥以 Base64 形式存到了 GitHub Secrets (TEXSHIFT_KEY_BASE64)，可以解密使用：
+        # run: |
+        #   [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\release.snk", [Convert]::FromBase64String("${{ secrets.TEXSHIFT_KEY_BASE64 }}"))
+        #   "TEXSHIFT_SIGNING_KEY_PATH=$env:RUNNER_TEMP\release.snk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        # 如果暂用临时 key，则保持原样：
+        run: |
+          $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider 2048
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\ci.snk", $rsa.ExportCspBlob($true))
+          "TEXSHIFT_SIGNING_KEY_PATH=$env:RUNNER_TEMP\ci.snk" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build and Package installer
+        shell: powershell
+        run: |
+          # 从 git tag (如 v1.0.0) 中提取纯版本号 (1.0.0)
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          ./build.ps1 -Target Package -Configuration Release -Version $version
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/package/*.exe
+          generate_release_notes: true # 自动根据 PR/Commit 生成更新日志
